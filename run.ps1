@@ -20,4 +20,4 @@ if (-not (Test-Path $dataDir)) {
     --enable-native-access=ALL-UNNAMED `
     "-Djava.net.useSystemProxies=true" `
     "-cp" "$classpath" `
-    "com.rankify.Main"
+    "com.trackoff.Main"

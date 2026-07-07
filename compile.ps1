@@ -52,3 +52,4 @@ Get-ChildItem -Path $srcRoot -Recurse -File |
     }
 
 Write-Host "Build complete." -ForegroundColor Green
+
