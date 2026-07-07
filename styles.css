@@ -1,0 +1,263 @@
+/* ============================================================
+   Rankify — Spotify-inspired theme
+   ============================================================ */
+
+.root {
+    -fx-background-color: linear-gradient(to bottom, #1f1f1f 0%, #121212 100%);
+    -fx-font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -fx-font-size: 14px;
+    -fx-text-fill: #ffffff;
+}
+
+/* --- Typography --- */
+.label                { -fx-text-fill: #ffffff; }
+.label-title          { -fx-font-size: 42px; -fx-font-weight: 900; -fx-text-fill: #ffffff; }
+.label-subtitle       { -fx-font-size: 14px; -fx-text-fill: #b3b3b3; -fx-font-weight: 500; }
+.label-header         { -fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #ffffff; }
+.label-stats          { -fx-font-size: 12px; -fx-text-fill: #b3b3b3; -fx-font-weight: 500; }
+.label-song-title     { -fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #ffffff; }
+.label-song-artist    { -fx-font-size: 14px; -fx-text-fill: #b3b3b3; -fx-font-weight: 500; }
+.label-song-meta      { -fx-font-size: 12px; -fx-text-fill: #a0a0a0; }
+.label-section        { -fx-font-size: 12px; -fx-text-fill: #b3b3b3; -fx-font-weight: bold; }
+
+/* --- Song comparison cards --- */
+.song-card {
+    -fx-background-color: #181818;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+    -fx-padding: 24;
+    -fx-cursor: hand;
+}
+.song-card:hover { -fx-background-color: #282828; }
+
+/* --- Buttons (unified padding for consistent sizing) --- */
+.button {
+    -fx-background-color: #2a2a2a;
+    -fx-text-fill: #ffffff;
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+    -fx-background-radius: 500;
+    -fx-border-radius: 500;
+    -fx-padding: 12 28 12 28;
+    -fx-cursor: hand;
+}
+.button:hover   { -fx-background-color: #3a3a3a; -fx-scale-x: 1.03; -fx-scale-y: 1.03; }
+.button:pressed { -fx-scale-x: 0.97; -fx-scale-y: 0.97; }
+
+.button-primary {
+    -fx-background-color: #1db954;
+    -fx-text-fill: #000000;
+    -fx-font-size: 14px;
+    -fx-padding: 12 28 12 28;   /* SAME as base for even sizing */
+}
+.button-primary:hover { -fx-background-color: #1ed760; }
+
+.button-secondary {
+    -fx-background-color: transparent;
+    -fx-border-color: #b3b3b3;
+    -fx-border-width: 1.5;
+    -fx-border-radius: 500;
+    -fx-text-fill: #ffffff;
+    -fx-padding: 12 28 12 28;   /* SAME as primary */
+}
+.button-secondary:hover {
+    -fx-border-color: #ffffff;
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+}
+
+.button-ghost {
+    -fx-background-color: transparent;
+    -fx-text-fill: #b3b3b3;
+    -fx-font-weight: normal;
+}
+.button-ghost:hover { -fx-background-color: rgba(255, 255, 255, 0.08); -fx-text-fill: #ffffff; }
+
+/* --- Progress bar --- */
+.progress-bar        { -fx-accent: #1db954; -fx-background-color: transparent; -fx-pref-height: 6; }
+.progress-bar > .track { -fx-background-color: #404040; -fx-background-radius: 3; }
+.progress-bar > .bar {
+    -fx-background-color: #1db954;
+    -fx-background-radius: 3;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
+/* --- Table (results view) --- */
+.table-view { -fx-background-color: #121212; -fx-border-color: transparent; -fx-padding: 0; }
+.table-view .column-header-background { -fx-background-color: #181818; -fx-background-radius: 6 6 0 0; }
+.table-view .column-header, .table-view .filler { -fx-background-color: transparent; -fx-border-color: transparent; -fx-size: 40; }
+.table-view .column-header .label { -fx-text-fill: #b3b3b3; -fx-font-size: 11px; -fx-font-weight: bold; -fx-alignment: CENTER-LEFT; }
+.table-view .table-row-cell { -fx-background-color: transparent; -fx-text-fill: #ffffff; -fx-border-color: transparent; -fx-cell-size: 40; }
+.table-view .table-row-cell:hover { -fx-background-color: rgba(255, 255, 255, 0.08); }
+.table-view .table-row-cell:selected { -fx-background-color: #1db954; }
+.table-view .table-cell { -fx-text-fill: #ffffff; -fx-border-color: transparent; -fx-alignment: CENTER-LEFT; -fx-padding: 0 12 0 12; }
+
+/* --- Dialogs / text --- */
+.dialog-pane { -fx-background-color: #282828; }
+.dialog-pane .label { -fx-text-fill: #ffffff; }
+.dialog-pane .header-panel { -fx-background-color: #181818; }
+.dialog-pane .button-bar .button { -fx-background-color: #1db954; -fx-text-fill: #000000; }
+.dialog-pane .button-bar .button:hover { -fx-background-color: #1ed760; }
+.text-field {
+    -fx-background-color: #2a2a2a; -fx-text-fill: #ffffff; -fx-prompt-text-fill: #808080;
+    -fx-background-radius: 4; -fx-border-radius: 4; -fx-padding: 8;
+}
+.text-field:focused { -fx-background-color: #3a3a3a; -fx-border-color: #1db954; -fx-border-width: 1; }
+.tooltip { -fx-background-color: #282828; -fx-text-fill: #ffffff; -fx-font-size: 12px; -fx-background-radius: 4; -fx-padding: 6 10 6 10; }
+
+/* --- Ranking sidebar --- */
+.ranking-sidebar {
+    -fx-background-color: #181818;
+    -fx-background-radius: 10;
+    -fx-padding: 16;
+}
+.ranking-list {
+    -fx-background-color: transparent;
+    -fx-control-inner-background: transparent;
+    -fx-border-color: transparent;
+}
+.ranking-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ffffff;
+    -fx-padding: 6 8 6 8;
+    -fx-font-size: 12px;
+}
+.ranking-list .list-cell:odd  { -fx-background-color: transparent; }
+.ranking-list .list-cell:hover { -fx-background-color: rgba(255, 255, 255, 0.05); }
+.ranking-list .list-cell:filled:selected { -fx-background-color: rgba(29, 185, 84, 0.25); }
+
+/* --- Tier list --- */
+.tier-row {
+    -fx-background-color: #181818;
+    -fx-background-radius: 8;
+    -fx-padding: 6;
+    -fx-spacing: 10;
+    -fx-alignment: CENTER-LEFT;
+}
+.tier-label {
+    -fx-font-size: 28px;
+    -fx-font-weight: 900;
+    -fx-text-fill: #000000;
+    -fx-min-width: 70;
+    -fx-min-height: 70;
+    -fx-alignment: CENTER;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+.tier-content {
+    -fx-background-color: #0f0f0f;
+    -fx-background-radius: 6;
+    -fx-padding: 8;
+    -fx-hgap: 6;
+    -fx-vgap: 6;
+    -fx-min-height: 80;
+}
+.tier-content-target { -fx-background-color: #1e2a1e; }   /* highlight during drag */
+
+.song-chip {
+    -fx-background-color: #2a2a2a;
+    -fx-background-radius: 6;
+    -fx-padding: 6 10 6 10;
+    -fx-cursor: hand;
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 12px;
+}
+.song-chip:hover { -fx-background-color: #3a3a3a; }
+.song-chip-dragging { -fx-opacity: 0.5; }
+
+.unranked-pool {
+    -fx-background-color: #181818;
+    -fx-background-radius: 8;
+    -fx-padding: 10;
+}
+
+/* --- Tier list song tiles --- */
+.tier-content {
+    -fx-background-color: #0f0f0f;
+    -fx-background-radius: 6;
+    -fx-padding: 8;
+    -fx-hgap: 8;
+    -fx-vgap: 8;
+    -fx-min-height: 96;
+}
+.tier-content-target { -fx-background-color: #1e2a1e; }
+
+.song-tile {
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+    -fx-background-color: #2a2a2a;
+}
+.song-tile:hover { -fx-effect: dropshadow(gaussian, rgba(29,185,84,0.5), 8, 0.4, 0, 0); }
+.song-tile-dragging { -fx-opacity: 0.5; }
+
+.song-tile-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    /* text shadow makes it readable even if the gradient fails to load */
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.9), 3, 0.7, 0, 1);
+}
+
+.song-tile-gradient {
+    -fx-background-color: linear-gradient(
+        to bottom,
+        transparent 0%,
+        transparent 40%,
+        rgba(0,0,0,0.55) 70%,
+        rgba(0,0,0,0.92) 100%
+    );
+    -fx-background-radius: 0 0 6 6;
+}
+
+.song-tile-placeholder {
+    -fx-background-color: #1a1a1a;
+    -fx-background-radius: 6;
+}
+.song-tile-placeholder-label {
+    -fx-text-fill: #4a4a4a;
+    -fx-font-size: 28px;
+}
+/* ===== Swipe view ===== */
+.swipe-card {
+    -fx-background-color: #282828;
+    -fx-background-radius: 20;
+    -fx-border-color: #3a3a3a;
+    -fx-border-width: 1;
+    -fx-border-radius: 20;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.7), 30, 0.25, 0, 10);
+    -fx-cursor: open-hand;
+}
+.swipe-card:pressed { -fx-cursor: closed-hand; }
+
+.swipe-title  { -fx-text-fill: white;   -fx-font-size: 20px; -fx-font-weight: bold; -fx-text-alignment: center; }
+.swipe-artist { -fx-text-fill: #d0d0d0; -fx-font-size: 15px; }
+.swipe-album  { -fx-text-fill: #909090; -fx-font-size: 13px; }
+
+.swipe-overlay-label {
+    -fx-font-size: 38px;
+    -fx-font-weight: 900;
+    -fx-padding: 6 18 6 18;
+    -fx-border-width: 4;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+}
+.swipe-overlay-keep   {
+    -fx-border-color: #1db954;
+    -fx-background-color: rgba(29,185,84,0.15);
+    -fx-text-fill: #1db954;
+}
+.swipe-overlay-delete {
+    -fx-border-color: #e22134;
+    -fx-background-color: rgba(226,33,52,0.15);
+    -fx-text-fill: #e22134;
+}
+
+.button-danger {
+    -fx-background-color: #e22134;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-background-radius: 999;
+    -fx-padding: 10 22;
+}
+.button-danger:hover  { -fx-background-color: #ff2d43; }
+.button-danger:pressed{ -fx-background-color: #c81b2c; }
