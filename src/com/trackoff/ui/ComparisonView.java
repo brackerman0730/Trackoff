@@ -163,7 +163,7 @@ public final class ComparisonView {
         stage.setOnCloseRequest(e -> disposePlayers());
 
         stage.setScene(scene);
-        stage.setTitle("Rankify — " + playlist.name());
+        stage.setTitle("Trackoff — " + playlist.name());
 
         refresh();
     }
@@ -435,8 +435,8 @@ public final class ComparisonView {
         disposePlayers();
         FileChooser fc = new FileChooser();
         fc.setTitle("Save session");
-        fc.setInitialFileName(playlist.name() + ".rkfy");
-        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Rankify session", "*.rkfy"));
+        fc.setInitialFileName(playlist.name() + ".trackoff");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Trackoff session", "*.trackoff"));
         File file = fc.showSaveDialog(stage);
         if (file == null) return;
 

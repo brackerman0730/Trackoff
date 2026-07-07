@@ -11,7 +11,7 @@ import java.util.List;
  * the SQLite settings table.
  *
  * The old app stored Client ID + Secret at
- * {@code %USERPROFILE%\.rankify\spotify.txt} (two lines). We keep
+ * {@code %USERPROFILE%\.trackoff\spotify.txt} (two lines). We keep
  * reading it on startup so existing users don't have to re-enter
  * their creds — but we only migrate when the DB has nothing yet.
  *

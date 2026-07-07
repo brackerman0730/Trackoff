@@ -225,7 +225,7 @@ public final class MainView {
     private void chooseAndResume() {
         File playlistFile = csvChooser("Select the ORIGINAL playlist file").showOpenDialog(stage);
         if (playlistFile == null) return;
-        File sessionFile = sessionChooser("Select saved session (.rkfy)").showOpenDialog(stage);
+        File sessionFile = sessionChooser("Select saved session (.trackoff)").showOpenDialog(stage);
         if (sessionFile == null) return;
 
         try {
@@ -270,7 +270,7 @@ public final class MainView {
         FileChooser fc = new FileChooser();
         fc.setTitle(title);
         fc.getExtensionFilters().addAll(
-                new FileChooser.ExtensionFilter("trackoff session (*.rkfy)", "*.rkfy"),
+                new FileChooser.ExtensionFilter("trackoff session (*.trackoff)", "*.trackoff"),
                 new FileChooser.ExtensionFilter("All files", "*.*")
         );
         return fc;
