@@ -10,6 +10,7 @@ public final class Main extends Application {
     public void start(Stage stage) {
         try {
             com.rankify.db.Database.init();
+            com.rankify.io.CredentialMigrator.migrateIfNeeded();
         } catch (Exception e) {
             javafx.scene.control.Alert a = new javafx.scene.control.Alert(
                     javafx.scene.control.Alert.AlertType.ERROR,

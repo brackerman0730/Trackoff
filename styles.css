@@ -261,3 +261,23 @@
 }
 .button-danger:hover  { -fx-background-color: #ff2d43; }
 .button-danger:pressed{ -fx-background-color: #c81b2c; }
+
+/* ===== Library view ===== */
+.library-tile {
+    -fx-background-color: #1e1e1e;
+    -fx-background-radius: 12;
+    -fx-padding: 10;
+    -fx-cursor: hand;
+}
+.library-tile:hover {
+    -fx-background-color: #2a2a2a;
+}
+.library-tile-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+.library-tile-sub {
+    -fx-text-fill: #909090;
+    -fx-font-size: 11px;
+}

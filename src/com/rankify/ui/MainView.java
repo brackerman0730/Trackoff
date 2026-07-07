@@ -4,6 +4,8 @@ import com.rankify.io.CsvPlaylistSource;
 import com.rankify.io.PlaylistSource;
 import com.rankify.io.ProgressStore;
 import com.rankify.io.SpotifyPlaylistSource;
+import com.rankify.io.lastfm.LastFmClient;
+import com.rankify.io.spotify.TokenStore;
 import com.rankify.model.Playlist;
 import com.rankify.ranking.AdaptiveMergeSortRanker;
 
@@ -12,65 +14,94 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
 
 public final class MainView {
-
-    private static final Path CRED_FILE =
-            Paths.get(System.getProperty("user.home"), ".rankify", "spotify.txt");
 
     private final Stage stage;
 
     public MainView(Stage stage) { this.stage = stage; }
 
     public void show() {
-        Label title = new Label("Rankify");
+        Label title = new Label("Trackoff");
         title.getStyleClass().add("label-title");
 
-        Label subtitle = new Label("Rank your Spotify playlists, one pair at a time");
+        Label subtitle = new Label("Rank, sort, and manage your Spotify playlists");
         subtitle.getStyleClass().add("label-subtitle");
 
-        Button loadCsv    = primaryButton("Load playlist CSV");
+        // ---- Library button (star of the show) ----
+        Button libraryBtn = primaryButton("My Library");
+        boolean linked = TokenStore.isLinked();
+        libraryBtn.setDisable(!linked);
+        if (!linked) {
+            libraryBtn.setTooltip(new Tooltip(
+                    "Connect your Spotify account first (button below)."));
+        }
+        libraryBtn.setOnAction(e -> new LibraryView(stage).show());
+
+        // ---- Ranking / tier / swipe entry points ----
+        Button loadCsv    = secondaryButton("Load playlist CSV");
         Button spotifyBtn = secondaryButton("Load from Spotify URL");
         Button tierBtn    = secondaryButton("Skip ranking → Tier List from CSV");
-        Button swipeBtn = secondaryButton("Swipe (Keep / Delete)");
+        Button swipeBtn   = secondaryButton("Swipe (Keep / Delete)");
         Button resumeBtn  = ghostButton("Resume saved session");
-        Button credsBtn   = ghostButton("Set Spotify credentials");
-        loadCsv   .setOnAction(e -> chooseAndStart());
-        spotifyBtn.setOnAction(e -> loadFromSpotify());
-        tierBtn   .setOnAction(e -> loadCsvForTierList());
-        swipeBtn.setOnAction(e -> startSwipe());
-        resumeBtn .setOnAction(e -> chooseAndResume());
-        credsBtn  .setOnAction(e -> promptForCredentials(true));
 
-        for (Button b : new Button[]{loadCsv, spotifyBtn, tierBtn, swipeBtn, resumeBtn, credsBtn}) {
+        loadCsv   .setOnAction(e -> chooseAndStart());
+        spotifyBtn.setOnAction(e -> loadFromSpotifyUrl());
+        tierBtn   .setOnAction(e -> loadCsvForTierList());
+        swipeBtn  .setOnAction(e -> startSwipe());
+        resumeBtn .setOnAction(e -> chooseAndResume());
+
+        // ---- Account connection buttons ----
+        Button spotifyAcctBtn = ghostButton(
+                TokenStore.isLinked() ? "Spotify account: connected"
+                                      : "Connect Spotify account");
+        Button lastfmAcctBtn  = ghostButton(
+                LastFmClient.isLinked() ? "Last.fm account: connected"
+                                        : "Connect Last.fm account");
+
+        spotifyAcctBtn.setOnAction(e -> new SpotifyConnectView(stage).show());
+        lastfmAcctBtn .setOnAction(e -> new LastFmConnectView(stage).show());
+
+        // ---- Sizing ----
+        Button[] all = {
+                libraryBtn, loadCsv, spotifyBtn, tierBtn, swipeBtn, resumeBtn,
+                spotifyAcctBtn, lastfmAcctBtn
+        };
+        for (Button b : all) {
             b.setMaxWidth(320);
-            b.setPrefHeight(46);
+            b.setPrefHeight(44);
         }
 
-        Region spacer = new Region();
-        spacer.setPrefHeight(20);
+        Region spacer1 = new Region(); spacer1.setPrefHeight(14);
+        Region spacer2 = new Region(); spacer2.setPrefHeight(14);
 
-        VBox root = new VBox(12, title, subtitle, spacer,
-                             loadCsv, spotifyBtn, tierBtn, swipeBtn, resumeBtn, credsBtn);
+        VBox root = new VBox(10,
+                title, subtitle,
+                spacer1,
+                libraryBtn,
+                spacer2,
+                loadCsv, spotifyBtn, tierBtn, swipeBtn, resumeBtn,
+                new Region() {{ setPrefHeight(14); }},
+                spotifyAcctBtn, lastfmAcctBtn);
         root.setAlignment(Pos.CENTER);
-        root.setPadding(new Insets(60));
+        root.setPadding(new Insets(50));
 
-        Scene scene = new Scene(root, 600, 540);
+        Scene scene = new Scene(root, 620, 700);
         Theme.apply(scene);
         stage.setScene(scene);
-        stage.setTitle("Rankify");
+        stage.setTitle("Trackoff");
         stage.show();
     }
 
@@ -79,7 +110,10 @@ public final class MainView {
     private Button secondaryButton(String t) { Button b = new Button(t); b.getStyleClass().add("button-secondary"); return b; }
     private Button ghostButton(String t)     { Button b = new Button(t); b.getStyleClass().add("button-ghost");     return b; }
 
-    // ---- Actions ----
+    // ==================================================================
+    //  Ranking / tier / swipe flows (unchanged from before)
+    // ==================================================================
+
     private void chooseAndStart() {
         File f = csvChooser("Select playlist file").showOpenDialog(stage);
         if (f == null) return;
@@ -92,7 +126,6 @@ public final class MainView {
         }
     }
 
-    /** Skip pairwise ranking and jump straight to the tier-list UI. */
     private void loadCsvForTierList() {
         File f = csvChooser("Select playlist file").showOpenDialog(stage);
         if (f == null) return;
@@ -104,21 +137,45 @@ public final class MainView {
             error("Couldn't load playlist: " + ex.getMessage());
         }
     }
-    /**
-     * Swipe mode. Asks the user whether they want to load a local CSV or
-     * pull a playlist from a Spotify URL — Spotify imports carry preview
-     * URLs and album art, so those cards auto-play while they're on top.
-     */
+
+    private void loadFromSpotifyUrl() {
+        // Uses the existing Client Credentials flow — kept intact so
+        // public playlists work without OAuth. OAuth users can use
+        // "My Library" instead.
+        String[] creds = readClientCreds();
+        if (creds == null) {
+            info("Set your Spotify Client ID + Secret first "
+                    + "(bottom of the main menu).");
+            return;
+        }
+
+        TextInputDialog urlDialog = new TextInputDialog();
+        urlDialog.setTitle("Load Spotify Playlist");
+        urlDialog.setHeaderText("Paste a Spotify playlist URL or ID");
+        urlDialog.setContentText("URL:");
+        urlDialog.getDialogPane().setPrefWidth(500);
+        Theme.apply(urlDialog.getDialogPane().getScene());
+        String url = urlDialog.showAndWait().orElse("").trim();
+        if (url.isEmpty()) return;
+
+        try {
+            PlaylistSource source = new SpotifyPlaylistSource(creds[0], creds[1]);
+            Playlist playlist = source.load(url);
+            startRanking(playlist);
+        } catch (Exception ex) {
+            error("Spotify load failed: " + ex.getMessage());
+        }
+    }
+
     private void startSwipe() {
         Alert choose = new Alert(Alert.AlertType.CONFIRMATION);
         choose.setTitle("Swipe");
         choose.setHeaderText("Where should the playlist come from?");
         choose.setContentText("Spotify imports include album art and 30s previews.");
 
-        javafx.scene.control.ButtonType csvBtn     = new javafx.scene.control.ButtonType("CSV file");
-        javafx.scene.control.ButtonType spotifyBtn = new javafx.scene.control.ButtonType("Spotify URL");
-        javafx.scene.control.ButtonType cancelBtn  =
-                new javafx.scene.control.ButtonType("Cancel", javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
+        ButtonType csvBtn     = new ButtonType("CSV file");
+        ButtonType spotifyBtn = new ButtonType("Spotify URL");
+        ButtonType cancelBtn  = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
         choose.getButtonTypes().setAll(csvBtn, spotifyBtn, cancelBtn);
         Theme.apply(choose.getDialogPane().getScene());
 
@@ -140,11 +197,11 @@ public final class MainView {
     }
 
     private void swipeFromSpotify() {
-        String[] creds = loadCredentials();
+        String[] creds = readClientCreds();
         if (creds == null) {
-            info("You need to set your Spotify Client ID and Secret first.");
-            creds = promptForCredentials(false);
-            if (creds == null) return;
+            info("Set your Spotify Client ID + Secret first "
+                    + "(bottom of the main menu).");
+            return;
         }
 
         TextInputDialog urlDialog = new TextInputDialog();
@@ -162,76 +219,6 @@ public final class MainView {
             new SwipeView(stage, playlist, playlist.songs()).show();
         } catch (Exception ex) {
             error("Spotify load failed: " + ex.getMessage());
-        }
-    }
-    private void loadFromSpotify() {
-        String[] creds = loadCredentials();
-        if (creds == null) {
-            info("You need to set your Spotify Client ID and Secret first.");
-            creds = promptForCredentials(false);
-            if (creds == null) return;
-        }
-
-        TextInputDialog urlDialog = new TextInputDialog();
-        urlDialog.setTitle("Load Spotify Playlist");
-        urlDialog.setHeaderText("Paste a Spotify playlist URL or ID");
-        urlDialog.setContentText("URL:");
-        urlDialog.getDialogPane().setPrefWidth(500);
-        Theme.apply(urlDialog.getDialogPane().getScene());
-        String url = urlDialog.showAndWait().orElse("").trim();
-        if (url.isEmpty()) return;
-
-        try {
-            PlaylistSource source = new SpotifyPlaylistSource(creds[0], creds[1]);
-            Playlist playlist = source.load(url);
-            startRanking(playlist);
-        } catch (Exception ex) {
-            error("Spotify load failed: " + ex.getMessage());
-        }
-    }
-
-    private String[] promptForCredentials(boolean allowOverwrite) {
-        String[] existing = loadCredentials();
-        if (existing != null && !allowOverwrite) return existing;
-
-        TextInputDialog idDialog = new TextInputDialog(existing == null ? "" : existing[0]);
-        idDialog.setTitle("Spotify Credentials");
-        idDialog.setHeaderText("Enter your Spotify Client ID");
-        idDialog.setContentText("Client ID:");
-        idDialog.getDialogPane().setPrefWidth(500);
-        Theme.apply(idDialog.getDialogPane().getScene());
-        String id = idDialog.showAndWait().orElse("").trim();
-        if (id.isEmpty()) return null;
-
-        TextInputDialog secretDialog = new TextInputDialog(existing == null ? "" : existing[1]);
-        secretDialog.setTitle("Spotify Credentials");
-        secretDialog.setHeaderText("Enter your Spotify Client Secret");
-        secretDialog.setContentText("Client Secret:");
-        secretDialog.getDialogPane().setPrefWidth(500);
-        Theme.apply(secretDialog.getDialogPane().getScene());
-        String secret = secretDialog.showAndWait().orElse("").trim();
-        if (secret.isEmpty()) return null;
-
-        saveCredentials(id, secret);
-        info("Credentials saved.");
-        return new String[]{id, secret};
-    }
-
-    private String[] loadCredentials() {
-        try {
-            if (!Files.exists(CRED_FILE)) return null;
-            List<String> lines = Files.readAllLines(CRED_FILE);
-            if (lines.size() < 2) return null;
-            return new String[]{ lines.get(0).trim(), lines.get(1).trim() };
-        } catch (Exception e) { return null; }
-    }
-
-    private void saveCredentials(String id, String secret) {
-        try {
-            Files.createDirectories(CRED_FILE.getParent());
-            Files.writeString(CRED_FILE, id + "\n" + secret + "\n");
-        } catch (Exception e) {
-            error("Couldn't save credentials: " + e.getMessage());
         }
     }
 
@@ -258,6 +245,18 @@ public final class MainView {
         }
         AdaptiveMergeSortRanker ranker = new AdaptiveMergeSortRanker(playlist);
         new ComparisonView(stage, playlist, ranker).show();
+    }
+
+    // ==================================================================
+    //  Helpers
+    // ==================================================================
+
+    /** Read Client ID + Secret from settings (SQLite). Returns null if unset. */
+    private String[] readClientCreds() {
+        var id = com.rankify.config.Settings.get(com.rankify.config.Settings.SPOTIFY_CLIENT_ID);
+        var sc = com.rankify.config.Settings.get(com.rankify.config.Settings.SPOTIFY_CLIENT_SECRET);
+        if (id.isEmpty() || sc.isEmpty()) return null;
+        return new String[]{ id.get(), sc.get() };
     }
 
     private FileChooser csvChooser(String title) {
