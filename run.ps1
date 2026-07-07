@@ -18,6 +18,7 @@ if (-not (Test-Path $dataDir)) {
     --add-modules javafx.controls,javafx.media,java.desktop `
     --enable-native-access=javafx.graphics `
     --enable-native-access=ALL-UNNAMED `
+    "-Djavax.net.ssl.trustStoreType=Windows-ROOT" `
     "-Djava.net.useSystemProxies=true" `
     "-cp" "$classpath" `
     "com.trackoff.Main"
