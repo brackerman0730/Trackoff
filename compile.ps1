@@ -1,60 +1,54 @@
-# ============================================================
-#  Rankify — Compile Script (PowerShell)
-# ============================================================
+# Trackoff build script
+# Compiles src\**\*.java into out\, then copies resource files so they
+# land next to the compiled classes (getResourceAsStream() looks on the
+# classpath, and out\ IS the classpath at runtime).
 
-$JavaFxLib = "C:\javafx-sdk-26.0.1\lib"
-$LibDir    = "lib"
-$SrcDir    = "src"
-$OutDir    = "out"
+$ErrorActionPreference = "Stop"
 
-Write-Host ""
-Write-Host "=== Cleaning previous build ===" -ForegroundColor Cyan
-if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
-New-Item -ItemType Directory -Path $OutDir | Out-Null
+$javafxLib  = "C:\javafx-sdk-26.0.1\lib"
+$sqliteJar  = Join-Path $PSScriptRoot "lib\sqlite-jdbc-3.53.2.0.jar"
+$srcRoot    = Join-Path $PSScriptRoot "src"
+$outRoot    = Join-Path $PSScriptRoot "out"
 
-Write-Host ""
-Write-Host "=== Verifying JavaFX SDK ===" -ForegroundColor Cyan
-if (-not (Test-Path "$JavaFxLib\javafx.controls.jar")) {
-    Write-Host "*** ERROR: JavaFX not found at $JavaFxLib" -ForegroundColor Red
+if (-not (Test-Path $sqliteJar)) {
+    Write-Host "SQLite JDBC not found at: $sqliteJar" -ForegroundColor Red
     exit 1
 }
-Write-Host "Found JavaFX at $JavaFxLib"
 
-Write-Host ""
-Write-Host "=== Verifying third-party libs ===" -ForegroundColor Cyan
-$SqliteJar = Get-ChildItem -Path $LibDir -Filter "sqlite-jdbc-*.jar" -ErrorAction SilentlyContinue |
-             Select-Object -First 1
-if (-not $SqliteJar) {
-    Write-Host "*** ERROR: sqlite-jdbc-*.jar not found in $LibDir\" -ForegroundColor Red
-    Write-Host "    Download from https://github.com/xerial/sqlite-jdbc/releases" -ForegroundColor Yellow
-    exit 1
-}
-Write-Host "Found $($SqliteJar.Name)"
+# Fresh output dir every build — cheap and avoids stale class weirdness.
+if (Test-Path $outRoot) { Remove-Item -Recurse -Force $outRoot }
+New-Item -ItemType Directory -Path $outRoot | Out-Null
 
-# Full classpath for compile (only needs the sqlite jar; JavaFX comes in via module path)
-$ClassPath = $SqliteJar.FullName
+# ---- 1. Compile ----
+$sources = Get-ChildItem -Path $srcRoot -Filter *.java -Recurse | ForEach-Object { $_.FullName }
 
-Write-Host ""
-Write-Host "=== Finding source files ===" -ForegroundColor Cyan
-$sources = Get-ChildItem -Path $SrcDir -Filter *.java -Recurse |
-           ForEach-Object { $_.FullName }
-Write-Host "Found $($sources.Count) source files"
+Write-Host "Compiling $($sources.Count) Java files..." -ForegroundColor Cyan
 
-Write-Host ""
-Write-Host "=== Compiling ===" -ForegroundColor Cyan
 & javac `
-    --module-path $JavaFxLib `
-    --add-modules javafx.controls,javafx.media `
-    -cp $ClassPath `
-    -d $OutDir `
+    --module-path "$javafxLib" `
+    --add-modules javafx.controls,javafx.media,java.desktop `
+    -cp "$sqliteJar" `
+    -d $outRoot `
     $sources
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
-    Write-Host "*** COMPILE FAILED ***" -ForegroundColor Red
+    Write-Host "Compilation failed." -ForegroundColor Red
     exit $LASTEXITCODE
 }
 
-Write-Host ""
-Write-Host "=== Compile succeeded ===" -ForegroundColor Green
-Write-Host "Output in: $OutDir\"
+# ---- 2. Copy non-Java resources into out\ ----
+# SQL migration scripts, CSS, etc. Anything under src\ that isn't .java.
+Write-Host "Copying resources..." -ForegroundColor Cyan
+Get-ChildItem -Path $srcRoot -Recurse -File |
+    Where-Object { $_.Extension -ne ".java" } |
+    ForEach-Object {
+        $rel  = $_.FullName.Substring($srcRoot.Length + 1)
+        $dest = Join-Path $outRoot $rel
+        $destDir = Split-Path $dest -Parent
+        if (-not (Test-Path $destDir)) {
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        }
+        Copy-Item -Path $_.FullName -Destination $dest -Force
+    }
+
+Write-Host "Build complete." -ForegroundColor Green

@@ -8,6 +8,16 @@ public final class Main extends Application {
 
     @Override
     public void start(Stage stage) {
+        try {
+            com.rankify.db.Database.init();
+        } catch (Exception e) {
+            javafx.scene.control.Alert a = new javafx.scene.control.Alert(
+                    javafx.scene.control.Alert.AlertType.ERROR,
+                    "Couldn't open Trackoff database:\n" + e.getMessage());
+            a.showAndWait();
+            javafx.application.Platform.exit();
+            return;
+        }
         new MainView(stage).show();
     }
 
