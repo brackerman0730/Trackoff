@@ -247,7 +247,7 @@ public final class ComparisonView {
         sidebar.setVisible(show);
         sidebar.setManaged(show);
         toggleSidebarBtn.setText(show ? "Hide current rankings ◀" : "Show current rankings ▶");
-        stage.setWidth(show ? 1080 : 900);
+        //stage.setWidth(show ? 1080 : 900);
     }
 
     private void refreshSidebar() {
