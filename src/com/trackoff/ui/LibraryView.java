@@ -2,6 +2,7 @@ package com.trackoff.ui;
 
 import com.trackoff.config.Settings;
 import com.trackoff.db.Dao;
+import com.trackoff.io.ProgressStore;
 import com.trackoff.io.SpotifyPlaylistSource;
 import com.trackoff.io.lastfm.LastFmClient;
 import com.trackoff.io.spotify.SpotifyApi;
@@ -61,6 +62,9 @@ public final class LibraryView {
     private Label             statusLabel;
     private Label             spotifyStrip;
     private Label             lastfmStrip;
+    /** Set by fetchAndLaunch() before calling launch(); read by the
+     *  RANK branch there so the session meta can record the source. */
+    private String currentPlaylistIdForRank;
 
     public LibraryView(Stage stage) { this.stage = stage; }
 
@@ -405,6 +409,7 @@ public final class LibraryView {
      */
     private void fetchAndLaunch(PlaylistRow r, LaunchMode mode) {
         setLoading(true, "Loading \"" + r.name() + "\"…");
+        currentPlaylistIdForRank = r.id();
 
         Task<Playlist> task = new Task<>() {
             @Override protected Playlist call() throws Exception {
@@ -433,7 +438,15 @@ public final class LibraryView {
             case RANK -> {
                 if (playlist.size() < 2) { info("Playlist needs at least two songs to rank."); return; }
                 AdaptiveMergeSortRanker ranker = new AdaptiveMergeSortRanker(playlist);
-                new ComparisonView(stage, playlist, ranker).show();
+                // Record where this playlist came from so a save-and-resume later
+                // can re-fetch it automatically without prompting for a CSV. The
+                // playlist ID is what the resume flow feeds back into
+                // SpotifyPlaylistSource.load().
+                var meta = ProgressStore.SessionMeta.forSpotify(
+                        currentPlaylistIdForRank, playlist);
+                new ComparisonView(stage, playlist, ranker)
+                        .withSessionMeta(meta)
+                        .show();
             }
             case TIER -> {
                 if (playlist.size() < 1) { info("Empty playlist."); return; }

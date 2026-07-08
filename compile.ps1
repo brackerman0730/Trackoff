@@ -26,7 +26,7 @@ Write-Host "Compiling $($sources.Count) Java files..." -ForegroundColor Cyan
 
 & javac `
     --module-path "$javafxLib" `
-    --add-modules javafx.controls,javafx.media,java.desktop `
+    --add-modules javafx.controls,javafx.media,java.desktop,javafx.fxml,javafx.swing `
     -cp "$sqliteJar" `
     -d $outRoot `
     $sources

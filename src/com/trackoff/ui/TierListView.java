@@ -17,6 +17,8 @@ import javafx.scene.input.TransferMode;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javax.imageio.ImageIO;
+import javafx.embed.swing.SwingFXUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -31,9 +33,9 @@ import java.util.*;
  *
  * Each song is rendered as a small tile: the album cover fills the tile,
  * with a dark gradient across the bottom and the track title layered on
- * top — YouTube-caption style — so it's legible even on bright covers.
+ * top â€” YouTube-caption style â€” so it's legible even on bright covers.
  * If a song has no image (CSV-only playlists), we fall back to a plain
- * dark placeholder with the ♪ glyph.
+ * dark placeholder with the â™ª glyph.
  *
  * Layout:
  *   [ Unranked pool                              ]
@@ -46,7 +48,7 @@ import java.util.*;
  */
 public final class TierListView {
 
-    /** Tile size in pixels — cover is square. */
+    /** Tile size in pixels â€” cover is square. */
     private static final double TILE_SIZE = 96;
 
     // ------------------------------------------------------------------
@@ -87,7 +89,7 @@ public final class TierListView {
     //  Scene assembly
     // ==================================================================
     public void show() {
-        Label title = new Label("Tier List — " + playlist.name());
+        Label title = new Label("Tier List â€” " + playlist.name());
         title.getStyleClass().add("label-header");
 
         Region headerSpacer = new Region();
@@ -127,7 +129,7 @@ public final class TierListView {
         Scene scene = new Scene(root, 1180, 760);
         Theme.apply(scene);
         stage.setScene(scene);
-        stage.setTitle("trackoff — Tier List");
+        stage.setTitle("trackoff â€” Tier List");
     }
 
     // ==================================================================
@@ -151,7 +153,7 @@ public final class TierListView {
             content = new FlowPane();
             content.getStyleClass().add("tier-content");
             // Wrap based on the pane's actual width so the preferred *height*
-            // is computed correctly (not "as if 1px wide" — which made rows huge).
+            // is computed correctly (not "as if 1px wide" â€” which made rows huge).
             content.prefWrapLengthProperty().bind(content.widthProperty());
             HBox.setHgrow(content, Priority.ALWAYS);
 
@@ -213,7 +215,7 @@ public final class TierListView {
     }
 
     // ==================================================================
-    //  Tile construction — cover + gradient + title
+    //  Tile construction â€” cover + gradient + title
     // ==================================================================
     private StackPane buildTile(Song s) {
         StackPane tile = new StackPane();
@@ -241,7 +243,7 @@ public final class TierListView {
             StackPane placeholder = new StackPane();
             placeholder.getStyleClass().add("song-tile-placeholder");
             placeholder.setPrefSize(TILE_SIZE, TILE_SIZE);
-            Label glyph = new Label("♪");
+            Label glyph = new Label("â™ª");
             glyph.getStyleClass().add("song-tile-placeholder-label");
             placeholder.getChildren().add(glyph);
             tile.getChildren().add(placeholder);
@@ -318,7 +320,7 @@ public final class TierListView {
 
             // If the song is being reordered inside the same row and its old
             // position was before the drop point, removing it shifts everything
-            // after it left by one — compensate so the tile lands where the user
+            // after it left by one â€” compensate so the tile lands where the user
             // actually pointed instead of one slot to the right.
             if (target.tierSongs.contains(s)) {
                 int oldIndex = target.tierSongs.indexOf(s);
@@ -366,7 +368,7 @@ public final class TierListView {
             if (x < centerX) return i;
         }
 
-        // 3. Past every tile in the last row → append.
+        // 3. Past every tile in the last row â†’ append.
         return kids.size();
     }
     // ==================================================================

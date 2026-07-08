@@ -27,6 +27,8 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 
+
+
 /**
  * The main comparison screen: two cards, four choices, a save button,
  * plus a togglable sidebar showing the ranker's current internal order.
@@ -57,6 +59,16 @@ public final class ComparisonView {
     /** Media players for the two preview clips (nullable when no preview exists). */
     private MediaPlayer leftPlayer;
     private MediaPlayer rightPlayer;
+
+    /** Optional metadata about where the playlist came from — recorded in the
+     *  saved session file so the resume flow can rebuild the playlist. */
+    private ProgressStore.SessionMeta sessionMeta;
+
+    /** Called by the launcher (LibraryView or MainView) after construction. */
+    public ComparisonView withSessionMeta(ProgressStore.SessionMeta meta) {
+        this.sessionMeta = meta;
+        return this;
+    }
 
     public ComparisonView(Stage stage, Playlist playlist, AdaptiveMergeSortRanker ranker) {
         this.stage    = stage;
@@ -441,7 +453,7 @@ public final class ComparisonView {
         if (file == null) return;
 
         try {
-            new ProgressStore().save(Paths.get(file.getAbsolutePath()), ranker);
+            new ProgressStore().save(Paths.get(file.getAbsolutePath()), ranker, sessionMeta);
             Alert a = new Alert(Alert.AlertType.INFORMATION,
                     "Session saved. Re-open it from the main screen later.");
             Theme.apply(a.getDialogPane().getScene());

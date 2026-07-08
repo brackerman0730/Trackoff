@@ -1,7 +1,6 @@
 package com.trackoff.io.spotify;
 
 import com.trackoff.config.Settings;
-
 import java.awt.Desktop;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -17,14 +16,14 @@ import java.util.Base64;
  * Spotify OAuth Authorization Code flow, hand-rolled.
  *
  * Two operations:
- *   {@link #login()}    — first-time authorization. Pops the browser,
+ *   {@link #login()}    â€” first-time authorization. Pops the browser,
  *                         listens on a loopback port for the redirect,
  *                         exchanges the code for tokens, saves them.
- *   {@link #refresh()}  — swap an expired access token for a new one
+ *   {@link #refresh()}  â€” swap an expired access token for a new one
  *                         using the stored refresh token.
  *
  * Requires that {@link Settings#SPOTIFY_CLIENT_ID} and
- * {@link Settings#SPOTIFY_CLIENT_SECRET} are set — those come from the
+ * {@link Settings#SPOTIFY_CLIENT_SECRET} are set â€” those come from the
  * user's own Spotify developer app.
  */
 public final class SpotifyAuth {
@@ -49,7 +48,7 @@ public final class SpotifyAuth {
     /**
      * Begin the OAuth dance. Blocks (in the caller's thread) until the
      * user finishes in the browser and we've exchanged the code for
-     * tokens — typically 5–30 seconds. Callers should invoke this off
+     * tokens â€” typically 5â€“30 seconds. Callers should invoke this off
      * the JavaFX application thread.
      *
      * @throws Exception if any step fails (bad creds, user denied,
@@ -63,7 +62,7 @@ public final class SpotifyAuth {
 
         String state = randomState();
 
-        // Bind the callback server first — we need the port for the URL.
+        // Bind the callback server first â€” we need the port for the URL.
         try (OAuthCallbackServer callback = new OAuthCallbackServer(state)) {
             String redirect = callback.redirectUri();
 
@@ -98,7 +97,7 @@ public final class SpotifyAuth {
     public static String refresh() throws Exception {
         var stored = TokenStore.load()
                 .orElseThrow(() -> new IllegalStateException(
-                        "Not logged in — call SpotifyAuth.login() first."));
+                        "Not logged in â€” call SpotifyAuth.login() first."));
 
         String clientId     = requireCred(Settings.SPOTIFY_CLIENT_ID, null);
         String clientSecret = requireCred(Settings.SPOTIFY_CLIENT_SECRET, null);
@@ -181,7 +180,7 @@ public final class SpotifyAuth {
     /**
      * Minimal token record used within this class, and the JSON parser
      * that produces it. We don't want to pull in Jackson or Gson for
-     * five keys — hand-rolled string scans do the job.
+     * five keys â€” hand-rolled string scans do the job.
      */
     private record Tokens(String accessToken,
                           String refreshToken,

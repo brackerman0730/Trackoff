@@ -15,7 +15,7 @@ if (-not (Test-Path $dataDir)) {
 
 & java `
     --module-path "$javafxLib" `
-    --add-modules javafx.controls,javafx.media,java.desktop `
+    --add-modules javafx.controls,javafx.media,java.desktop,javafx.fxml,javafx.swing `
     --enable-native-access=javafx.graphics `
     --enable-native-access=ALL-UNNAMED `
     "-Djavax.net.ssl.trustStoreType=Windows-ROOT" `

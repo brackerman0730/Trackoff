@@ -120,7 +120,8 @@ public final class MainView {
         try {
             PlaylistSource source = new CsvPlaylistSource();
             Playlist playlist = source.load(f.getAbsolutePath());
-            startRanking(playlist);
+            startRanking(playlist,
+                ProgressStore.SessionMeta.forCsv(f.getAbsolutePath(), playlist));
         } catch (Exception ex) {
             error("Couldn't load playlist: " + ex.getMessage());
         }
@@ -159,9 +160,13 @@ public final class MainView {
         if (url.isEmpty()) return;
 
         try {
-            PlaylistSource source = new SpotifyPlaylistSource();
+            SpotifyPlaylistSource source = new SpotifyPlaylistSource();
             Playlist playlist = source.load(url);
-            startRanking(playlist);
+            // Store the raw URL/ID as the source — resume will feed it
+            // back into SpotifyPlaylistSource.load(), which accepts
+            // either a full URL, spotify: URI, or bare ID.
+            startRanking(playlist,
+                    ProgressStore.SessionMeta.forSpotify(url, playlist));
         } catch (Exception ex) {
             error("Spotify load failed: " + ex.getMessage());
         }
@@ -222,29 +227,87 @@ public final class MainView {
         }
     }
 
+/**
+     * Resume a saved session. Reads the SOURCE header first (if present)
+     * to decide whether to re-fetch from Spotify automatically or prompt
+     * for the original CSV file (legacy behavior). Then verifies the
+     * playlist's signature matches what was saved before restoring
+     * ranker state on top.
+     */
     private void chooseAndResume() {
-        File playlistFile = csvChooser("Select the ORIGINAL playlist file").showOpenDialog(stage);
-        if (playlistFile == null) return;
         File sessionFile = sessionChooser("Select saved session (.trackoff)").showOpenDialog(stage);
         if (sessionFile == null) return;
 
         try {
-            Playlist playlist = new CsvPlaylistSource().load(playlistFile.getAbsolutePath());
+            ProgressStore store = new ProgressStore();
+            ProgressStore.SessionMeta meta = store.peekMeta(sessionFile.toPath());
+
+            Playlist playlist = switch (meta.type()) {
+                case SPOTIFY -> {
+                    if (!TokenStore.isLinked()) {
+                        error("This session came from Spotify, but your Spotify "
+                                + "account isn't connected. Connect it first, "
+                                + "then try resuming again.");
+                        yield null;
+                    }
+                    yield new SpotifyPlaylistSource().load(meta.sourceId());
+                }
+                case CSV -> {
+                    // We know the original path from the header. Try that first.
+                    File saved = new File(meta.sourceId());
+                    if (saved.exists()) {
+                        yield new CsvPlaylistSource().load(saved.getAbsolutePath());
+                    }
+                    // File moved/renamed — fall back to asking.
+                    info("Couldn't find the original CSV at:\n" + meta.sourceId()
+                            + "\n\nPick it manually.");
+                    File picked = csvChooser("Locate the original playlist file")
+                            .showOpenDialog(stage);
+                    yield picked == null
+                            ? null
+                            : new CsvPlaylistSource().load(picked.getAbsolutePath());
+                }
+                case LEGACY_CSV -> {
+                    // Old session file with no source header — prompt like before.
+                    File picked = csvChooser("Select the ORIGINAL playlist file")
+                            .showOpenDialog(stage);
+                    yield picked == null
+                            ? null
+                            : new CsvPlaylistSource().load(picked.getAbsolutePath());
+                }
+            };
+
+            if (playlist == null) return;
+
+            // Strict signature check for non-legacy sessions.
+            if (meta.type() != ProgressStore.SourceType.LEGACY_CSV
+                    && !meta.matchesPlaylist(playlist)) {
+                error("This playlist has changed since the session was saved "
+                        + "(songs added, removed, or reordered). Start a fresh "
+                        + "ranking instead.");
+                return;
+            }
+
             AdaptiveMergeSortRanker ranker = new AdaptiveMergeSortRanker(playlist);
-            new ProgressStore().load(Paths.get(sessionFile.getAbsolutePath()), ranker);
-            new ComparisonView(stage, playlist, ranker).show();
+            store.load(sessionFile.toPath(), ranker);
+            new ComparisonView(stage, playlist, ranker)
+                    .withSessionMeta(meta)   // preserve meta if user saves again
+                    .show();
+
         } catch (Exception ex) {
             error("Couldn't resume: " + ex.getMessage());
         }
     }
 
-    private void startRanking(Playlist playlist) {
+    private void startRanking(Playlist playlist, ProgressStore.SessionMeta meta) {
         if (playlist.size() < 2) {
             info("Playlist needs at least two songs to rank.");
             return;
         }
         AdaptiveMergeSortRanker ranker = new AdaptiveMergeSortRanker(playlist);
-        new ComparisonView(stage, playlist, ranker).show();
+        new ComparisonView(stage, playlist, ranker)
+                .withSessionMeta(meta)
+                .show();
     }
 
     // ==================================================================
