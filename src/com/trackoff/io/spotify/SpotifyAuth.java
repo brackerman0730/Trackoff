@@ -35,7 +35,8 @@ public final class SpotifyAuth {
             "playlist-read-collaborative",
             "playlist-modify-public",
             "playlist-modify-private",
-            "user-library-read");
+            "user-library-read",
+            "user-read-private");
 
     private static final HttpClient HTTP = HttpClient.newHttpClient();
 

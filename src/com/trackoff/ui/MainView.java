@@ -139,13 +139,13 @@ public final class MainView {
     }
 
     private void loadFromSpotifyUrl() {
-        // Uses the existing Client Credentials flow — kept intact so
-        // public playlists work without OAuth. OAuth users can use
-        // "My Library" instead.
-        String[] creds = readClientCreds();
-        if (creds == null) {
-            info("Set your Spotify Client ID + Secret first "
-                    + "(bottom of the main menu).");
+        // Now piggybacks on the same OAuth session "My Library" uses
+        // (see SpotifyPlaylistSource) instead of its own separate
+        // Client Credentials setup — that path couldn't see private
+        // playlists and was a second thing to misconfigure.
+        if (!TokenStore.isLinked()) {
+            info("Connect your Spotify account first (button below), "
+                    + "then try loading the URL again.");
             return;
         }
 
@@ -159,7 +159,7 @@ public final class MainView {
         if (url.isEmpty()) return;
 
         try {
-            PlaylistSource source = new SpotifyPlaylistSource(creds[0], creds[1]);
+            PlaylistSource source = new SpotifyPlaylistSource();
             Playlist playlist = source.load(url);
             startRanking(playlist);
         } catch (Exception ex) {
@@ -197,10 +197,10 @@ public final class MainView {
     }
 
     private void swipeFromSpotify() {
-        String[] creds = readClientCreds();
-        if (creds == null) {
-            info("Set your Spotify Client ID + Secret first "
-                    + "(bottom of the main menu).");
+        // Same OAuth-reuse change as loadFromSpotifyUrl() above.
+        if (!TokenStore.isLinked()) {
+            info("Connect your Spotify account first (button below), "
+                    + "then try loading the URL again.");
             return;
         }
 
@@ -214,7 +214,7 @@ public final class MainView {
         if (url.isEmpty()) return;
 
         try {
-            Playlist playlist = new SpotifyPlaylistSource(creds[0], creds[1]).load(url);
+            Playlist playlist = new SpotifyPlaylistSource().load(url);
             if (playlist.size() < 1) { info("Empty playlist."); return; }
             new SwipeView(stage, playlist, playlist.songs()).show();
         } catch (Exception ex) {
@@ -250,14 +250,6 @@ public final class MainView {
     // ==================================================================
     //  Helpers
     // ==================================================================
-
-    /** Read Client ID + Secret from settings (SQLite). Returns null if unset. */
-    private String[] readClientCreds() {
-        var id = com.trackoff.config.Settings.get(com.trackoff.config.Settings.SPOTIFY_CLIENT_ID);
-        var sc = com.trackoff.config.Settings.get(com.trackoff.config.Settings.SPOTIFY_CLIENT_SECRET);
-        if (id.isEmpty() || sc.isEmpty()) return null;
-        return new String[]{ id.get(), sc.get() };
-    }
 
     private FileChooser csvChooser(String title) {
         FileChooser fc = new FileChooser();

@@ -2,8 +2,11 @@ package com.trackoff.ui;
 
 import com.trackoff.config.Settings;
 import com.trackoff.db.Dao;
+import com.trackoff.io.SpotifyPlaylistSource;
 import com.trackoff.io.lastfm.LastFmClient;
 import com.trackoff.io.spotify.SpotifyApi;
+import com.trackoff.model.Playlist;
+import com.trackoff.ranking.AdaptiveMergeSortRanker;
 
 import javafx.application.Platform;
 import javafx.concurrent.Task;
@@ -12,6 +15,8 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ScrollPane;
@@ -38,8 +43,11 @@ import java.util.List;
  * fetch so a second visit is instant. The Refresh button re-fetches
  * from Spotify.
  *
- * Clicking a tile → Phase 2 will open the playlist manager. For now
- * it shows a friendly "coming soon" alert.
+ * Clicking a tile fetches that playlist's full track list from Spotify
+ * (same OAuth session, via SpotifyPlaylistSource) and asks the user
+ * whether to Rank it, Tier List it, or Swipe through it — the same
+ * three destinations the old "paste a URL" flow could reach, just
+ * without needing to know the URL.
  */
 public final class LibraryView {
 
@@ -119,7 +127,7 @@ public final class LibraryView {
     }
 
     // ==================================================================
-    //  Data loading
+    //  Data loading (playlist list)
     // ==================================================================
 
     /**
@@ -360,13 +368,86 @@ public final class LibraryView {
         return tile;
     }
 
+    // ==================================================================
+    //  Tile click → choose destination → fetch → launch
+    // ==================================================================
+
+    /** Where a picked playlist can go once we've fetched its tracks. */
+    private enum LaunchMode { RANK, TIER, SWIPE }
+
     private void onPlaylistClicked(PlaylistRow r) {
-        // Phase 2 will wire this to the playlist manager. For now:
-        Alert a = new Alert(Alert.AlertType.INFORMATION,
-                "Playlist Manager is coming in Phase 2.\n\n"
-              + "For now, use \"Load from Spotify URL\" on the main menu "
-              + "to rank/tier/swipe this playlist.");
-        a.setHeaderText(r.name());
+        Alert choose = new Alert(Alert.AlertType.CONFIRMATION);
+        choose.setTitle(r.name());
+        choose.setHeaderText(r.name());
+        choose.setContentText("What do you want to do with this playlist?");
+
+        ButtonType rankBtn   = new ButtonType("Rank");
+        ButtonType tierBtn   = new ButtonType("Tier List");
+        ButtonType swipeBtn  = new ButtonType("Swipe");
+        ButtonType cancelBtn = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+        choose.getButtonTypes().setAll(rankBtn, tierBtn, swipeBtn, cancelBtn);
+        Theme.apply(choose.getDialogPane().getScene());
+
+        var pick = choose.showAndWait().orElse(cancelBtn);
+        if (pick == cancelBtn) return;
+
+        LaunchMode mode = pick == rankBtn ? LaunchMode.RANK
+                        : pick == tierBtn ? LaunchMode.TIER
+                                          : LaunchMode.SWIPE;
+        fetchAndLaunch(r, mode);
+    }
+
+    /**
+     * Pulls the full track list for one playlist (id, not the whole
+     * library) via the same OAuth client the tile grid uses, then
+     * hands off to whichever screen the user picked. Runs off the FX
+     * thread since this is a real network call, not a cache read.
+     */
+    private void fetchAndLaunch(PlaylistRow r, LaunchMode mode) {
+        setLoading(true, "Loading \"" + r.name() + "\"…");
+
+        Task<Playlist> task = new Task<>() {
+            @Override protected Playlist call() throws Exception {
+                return new SpotifyPlaylistSource().load(r.id());
+            }
+        };
+
+        task.setOnSucceeded(ev -> {
+            setLoading(false, r.trackCount() + " tracks loaded");
+            launch(task.getValue(), mode);
+        });
+        task.setOnFailed(ev -> {
+            Throwable t = task.getException();
+            setLoading(false, "Failed to load.");
+            Alert a = new Alert(Alert.AlertType.ERROR,
+                    "Couldn't load \"" + r.name() + "\":\n"
+                            + (t == null ? "unknown" : t.getMessage()));
+            Theme.apply(a.getDialogPane().getScene());
+            a.showAndWait();
+        });
+        new Thread(task, "library-playlist-fetch").start();
+    }
+
+    private void launch(Playlist playlist, LaunchMode mode) {
+        switch (mode) {
+            case RANK -> {
+                if (playlist.size() < 2) { info("Playlist needs at least two songs to rank."); return; }
+                AdaptiveMergeSortRanker ranker = new AdaptiveMergeSortRanker(playlist);
+                new ComparisonView(stage, playlist, ranker).show();
+            }
+            case TIER -> {
+                if (playlist.size() < 1) { info("Empty playlist."); return; }
+                new TierListView(stage, playlist, playlist.songs()).show();
+            }
+            case SWIPE -> {
+                if (playlist.size() < 1) { info("Empty playlist."); return; }
+                new SwipeView(stage, playlist, playlist.songs()).show();
+            }
+        }
+    }
+
+    private void info(String msg) {
+        Alert a = new Alert(Alert.AlertType.INFORMATION, msg);
         Theme.apply(a.getDialogPane().getScene());
         a.showAndWait();
     }
