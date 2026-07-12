@@ -1,16 +1,22 @@
 package com.trackoff.ui;
 
 import com.trackoff.io.PreviewLookup;
+import com.trackoff.io.lastfm.LastFmClient;
 import com.trackoff.io.lastfm.LastFmPlaycountLookup;
 import com.trackoff.model.Playlist;
 import com.trackoff.model.Song;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
@@ -26,6 +32,9 @@ import javafx.util.Duration;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Shows a playlist's songs in order, each with album art (+ a preview
@@ -52,9 +61,13 @@ public final class LastFmManagerView {
     private final Stage    stage;
     private final Playlist playlist;
 
+    /** Always in original playlist order; {@link #renderRows} controls display order. */
     private final List<RowState> rows = new ArrayList<>();
+    private VBox rowsBox;
+    private boolean sortByPlays = false;
     private long runningMax = 0;
     private RowState currentlyPlaying;
+    private Set<String> initiallyOverridden = Set.of();
 
     /** Per-row UI refs + playback state, one per song. */
     private static final class RowState {
@@ -62,15 +75,18 @@ public final class LastFmManagerView {
         final Region fillBar;
         final Label countLabel;
         final Button playBtn;
+        final Label indexLabel;
+        HBox rowNode;
         long playcount;
         boolean resolved;
         MediaPlayer player;
 
-        RowState(Song song, Region fillBar, Label countLabel, Button playBtn) {
+        RowState(Song song, Region fillBar, Label countLabel, Button playBtn, Label indexLabel) {
             this.song = song;
             this.fillBar = fillBar;
             this.countLabel = countLabel;
             this.playBtn = playBtn;
+            this.indexLabel = indexLabel;
         }
     }
 
@@ -86,19 +102,31 @@ public final class LastFmManagerView {
         Label sub = new Label(playlist.size() + " tracks  ·  Last.fm play counts");
         sub.getStyleClass().add("label-muted");
 
+        Button sortBtn = new Button("Sort: Most Played");
+        sortBtn.getStyleClass().add("button-ghost");
+        sortBtn.setOnAction(e -> {
+            sortByPlays = !sortByPlays;
+            sortBtn.setText(sortByPlays ? "Sort: Playlist Order" : "Sort: Most Played");
+            applySort();
+        });
+
         Button back = new Button("Back");
         back.getStyleClass().add("button-ghost");
         back.setOnAction(e -> { disposeAllPlayers(); new MainView(stage).show(); });
 
         Region hspacer = new Region();
         HBox.setHgrow(hspacer, Priority.ALWAYS);
-        HBox header = new HBox(10, title, hspacer, back);
+        HBox header = new HBox(10, title, hspacer, sortBtn, back);
         header.setAlignment(Pos.CENTER_LEFT);
 
-        VBox rowsBox = new VBox(4);
+        initiallyOverridden = LastFmPlaycountLookup.songIdsWithOverride(
+                playlist.songs().stream().map(Song::id).collect(Collectors.toSet()));
+
+        rowsBox = new VBox(4);
         for (Song s : playlist.songs()) {
-            rowsBox.getChildren().add(buildRow(rows.size(), s));
+            buildRow(s);
         }
+        renderRows(rows);
 
         ScrollPane scroll = new ScrollPane(rowsBox);
         scroll.setFitToWidth(true);
@@ -120,8 +148,8 @@ public final class LastFmManagerView {
         }
     }
 
-    private HBox buildRow(int index, Song s) {
-        Label indexLabel = new Label(String.valueOf(index + 1));
+    private void buildRow(Song s) {
+        Label indexLabel = new Label();
         indexLabel.getStyleClass().add("label-song-meta");
         indexLabel.setMinWidth(24);
 
@@ -185,15 +213,96 @@ public final class LastFmManagerView {
         countLabel.getStyleClass().add("label-song-meta");
         countLabel.setMinWidth(70);
 
-        RowState state = new RowState(s, fill, countLabel, playBtn);
-        rows.add(state);
+        RowState state = new RowState(s, fill, countLabel, playBtn, indexLabel);
         playBtn.setOnAction(e -> togglePlayback(state));
+        if (initiallyOverridden.contains(s.id())) {
+            countLabel.getStyleClass().add("label-manual-override");
+        }
 
         HBox row = new HBox(14, indexLabel, artHolder, info, barStack, countLabel);
         row.getStyleClass().add("lastfm-manager-row");
         row.setAlignment(Pos.CENTER_LEFT);
         row.setPadding(new Insets(6, 10, 6, 10));
-        return row;
+
+        MenuItem reassignItem = new MenuItem("Set Last.fm track…");
+        reassignItem.setOnAction(e -> showReassignDialog(state));
+        MenuItem clearItem = new MenuItem("Clear manual override");
+        clearItem.setOnAction(e -> clearOverride(state));
+        ContextMenu menu = new ContextMenu(reassignItem, clearItem);
+        row.setOnContextMenuRequested(e -> menu.show(row, e.getScreenX(), e.getScreenY()));
+
+        state.rowNode = row;
+        rows.add(state);
+    }
+
+    // ==================================================================
+    //  Manual reassignment — right-click a row and paste a Last.fm
+    //  track URL to override which track its play count comes from.
+    //  Persisted per-song via LastFmPlaycountLookup, so it survives
+    //  restarts and applies wherever this song appears.
+    // ==================================================================
+
+    private void showReassignDialog(RowState row) {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Reassign Last.fm track");
+        dialog.setHeaderText("Paste the Last.fm track URL for:\n" + row.song.title() + " — " + row.song.artist());
+        dialog.setContentText("Last.fm URL:");
+        Theme.apply(dialog.getDialogPane().getScene());
+
+        dialog.showAndWait().ifPresent(url -> {
+            if (url.isBlank()) return;
+            Optional<LastFmClient.TrackMatch> match = LastFmClient.parseTrackUrl(url);
+            if (match.isEmpty()) {
+                Alert a = new Alert(Alert.AlertType.ERROR,
+                        "Couldn't read a track from that URL. Expected something like "
+                      + "https://www.last.fm/music/Artist/_/Track+Name");
+                Theme.apply(a.getDialogPane().getScene());
+                a.showAndWait();
+                return;
+            }
+            LastFmPlaycountLookup.setOverride(row.song.id(), match.get().artist(), match.get().name());
+            row.countLabel.getStyleClass().add("label-manual-override");
+            refreshRow(row);
+        });
+    }
+
+    private void clearOverride(RowState row) {
+        LastFmPlaycountLookup.clearOverride(row.song.id());
+        row.countLabel.getStyleClass().remove("label-manual-override");
+        refreshRow(row);
+    }
+
+    private void refreshRow(RowState row) {
+        LastFmPlaycountLookup.invalidate(row.song);
+        row.resolved = false;
+        row.countLabel.setText("…");
+        LastFmPlaycountLookup.resolveAsync(row.song, playcount -> onPlaycountResolved(row, playcount));
+    }
+
+    // ==================================================================
+    //  Sorting — "Playlist Order" (insertion order) vs. "Most Played"
+    //  (descending playcount; re-applied live as more counts resolve).
+    // ==================================================================
+
+    private void applySort() {
+        List<RowState> order;
+        if (sortByPlays) {
+            order = new ArrayList<>(rows);
+            order.sort((a, b) -> Long.compare(b.playcount, a.playcount));   // stable: ties keep playlist order
+        } else {
+            order = rows;
+        }
+        renderRows(order);
+    }
+
+    private void renderRows(List<RowState> order) {
+        List<Node> nodes = new ArrayList<>(order.size());
+        for (int i = 0; i < order.size(); i++) {
+            RowState r = order.get(i);
+            r.indexLabel.setText(String.valueOf(i + 1));
+            nodes.add(r.rowNode);
+        }
+        rowsBox.getChildren().setAll(nodes);
     }
 
     // ==================================================================
@@ -211,6 +320,8 @@ public final class LastFmManagerView {
         } else {
             rescaleBar(row);
         }
+
+        if (sortByPlays) applySort();
     }
 
     private void rescaleBar(RowState row) {

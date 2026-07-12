@@ -183,6 +183,48 @@ public final class LastFmClient {
         return Optional.of(new TrackMatch(name, artist));
     }
 
+    /**
+     * Parse a Last.fm track URL (e.g.
+     * {@code https://www.last.fm/music/Radiohead/_/Karma+Police}) into
+     * an (artist, track) pair, for the manual "paste a link to
+     * reassign" override. Last.fm's own URLs use "+" for spaces in path
+     * segments (confirmed via raw API responses — not the standard
+     * %20), so segments are decoded accordingly rather than via plain
+     * URLDecoder/URI handling alone.
+     */
+    public static Optional<TrackMatch> parseTrackUrl(String url) {
+        if (url == null) return Optional.empty();
+        String u = url.trim();
+        int idx = u.indexOf("/music/");
+        if (idx < 0) return Optional.empty();
+
+        String rest = u.substring(idx + "/music/".length());
+        int cut = rest.length();
+        int q = rest.indexOf('?'); if (q >= 0) cut = Math.min(cut, q);
+        int h = rest.indexOf('#'); if (h >= 0) cut = Math.min(cut, h);
+        rest = rest.substring(0, cut);
+
+        String[] parts = rest.split("/");
+        if (parts.length < 1) return Optional.empty();
+        String artist = decodeUrlSegment(parts[0]);
+
+        int underscoreIdx = -1;
+        for (int i = 1; i < parts.length; i++) {
+            if (parts[i].equals("_")) { underscoreIdx = i; break; }
+        }
+        if (underscoreIdx < 0 || underscoreIdx + 1 >= parts.length) return Optional.empty();
+        String track = decodeUrlSegment(parts[underscoreIdx + 1]);
+
+        if (artist.isBlank() || track.isBlank()) return Optional.empty();
+        return Optional.of(new TrackMatch(track, artist));
+    }
+
+    private static String decodeUrlSegment(String s) {
+        String withSpaces = s.replace('+', ' ');
+        try { return java.net.URLDecoder.decode(withSpaces, StandardCharsets.UTF_8); }
+        catch (Exception e) { return withSpaces; }
+    }
+
     /** Convenience: {@link #searchTrack} using the currently-linked API key. */
     public static Optional<TrackMatch> searchLinkedTrack(String track, String artistHint) throws Exception {
         Optional<String> key = Settings.get(Settings.LASTFM_API_KEY);

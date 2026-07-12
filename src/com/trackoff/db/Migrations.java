@@ -33,7 +33,8 @@ final class Migrations {
     /** All migrations, in ascending version order. */
     private static final List<Migration> ALL = List.of(
             new Migration(1, "/com/trackoff/db/schema/V1__initial_schema.sql"),
-            new Migration(2, "/com/trackoff/db/schema/V2__lastfm_manager.sql")
+            new Migration(2, "/com/trackoff/db/schema/V2__lastfm_manager.sql"),
+            new Migration(3, "/com/trackoff/db/schema/V3__lastfm_override.sql")
     );
 
     private Migrations() {}
