@@ -1,5 +1,6 @@
 package com.trackoff.ui;
 
+import com.trackoff.io.PreviewLookup;
 import com.trackoff.model.Playlist;
 import com.trackoff.model.Song;
 import javafx.animation.*;
@@ -34,8 +35,9 @@ import java.util.Map;
  * every song has been decided we show a summary with both piles and a
  * CSV export.
  *
- * If a song carries a 30-second preview URL (only Spotify imports do),
- * that clip auto-plays while the card is on top.
+ * If a 30-second preview clip can be found for a song on Deezer (looked
+ * up live by artist/title, regardless of import source), it auto-plays
+ * while the card is on top.
  */
 public final class SwipeView {
 
@@ -357,20 +359,26 @@ public final class SwipeView {
     }
 
     // ==================================================================
-    //  Preview playback — auto-plays whenever a preview URL exists
-    //  (i.e. Spotify imports). CSV playlists have no URL, so silence.
+    //  Preview playback — auto-plays whenever Deezer has a clip for the
+    //  song on top. Looked up async so swiping never blocks on network.
     // ==================================================================
     private void startPreview(Song s) {
         stopPreview();
-        if (!s.hasPreview()) return;
-        try {
-            Media m = new Media(s.previewUrl());
-            currentPlayer = new MediaPlayer(m);
-            currentPlayer.setVolume(0.5);
-            currentPlayer.setAutoPlay(true);
-        } catch (Exception ignored) {
-            currentPlayer = null;
-        }
+        PreviewLookup.resolveAsync(s, previewUrl -> {
+            // Bail if the user has already moved off this card by the
+            // time the (async, possibly network-bound) lookup resolves.
+            if (previewUrl.isEmpty()) return;
+            if (currentIndex >= songs.size() || !songs.get(currentIndex).id().equals(s.id())) return;
+
+            try {
+                Media m = new Media(previewUrl.get());
+                currentPlayer = new MediaPlayer(m);
+                currentPlayer.setVolume(0.5);
+                currentPlayer.setAutoPlay(true);
+            } catch (Exception ignored) {
+                currentPlayer = null;
+            }
+        });
     }
 
     private void stopPreview() {

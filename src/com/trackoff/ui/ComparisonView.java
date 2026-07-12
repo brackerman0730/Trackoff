@@ -1,5 +1,6 @@
 package com.trackoff.ui;
 
+import com.trackoff.io.PreviewLookup;
 import com.trackoff.io.ProgressStore;
 import com.trackoff.model.Playlist;
 import com.trackoff.model.Song;
@@ -32,8 +33,9 @@ import java.util.Optional;
 /**
  * The main comparison screen: two cards, four choices, a save button,
  * plus a togglable sidebar showing the ranker's current internal order.
- * If the song came from the Spotify API, we also render album art and
- * a play/pause button for the 30-second preview.
+ * When album art is available we render it, and a play/pause button for
+ * a 30-second preview clip looked up live from Deezer (works regardless
+ * of whether the song came from Spotify or a CSV import).
  */
 public final class ComparisonView {
 
@@ -190,6 +192,11 @@ public final class ComparisonView {
         final Label     meta      = new Label();
         final Button    playBtn   = new Button("▶ Play preview");
         final StackPane artHolder = new StackPane();
+
+        /** Id of the song currently assigned to this card — lets an
+         *  in-flight async preview lookup detect it's stale once the
+         *  card has moved on to a different song. */
+        String currentSongId;
     }
 
     /** Build a full card VBox for one side. */
@@ -359,38 +366,46 @@ public final class ComparisonView {
         }
 
         // ----- Preview -----
-        MediaPlayer newPlayer = null;
-        if (s.hasPreview()) {
+        // Dispose whatever was playing for this side and hide the button
+        // until (if) an async lookup finds a clip for the new song.
+        if (isLeft) {
+            if (leftPlayer != null) { leftPlayer.dispose(); leftPlayer = null; }
+        } else {
+            if (rightPlayer != null) { rightPlayer.dispose(); rightPlayer = null; }
+        }
+        hidePlayButton(w);
+
+        w.currentSongId = s.id();
+        PreviewLookup.resolveAsync(s, previewUrl -> {
+            // The card may have moved on to a different song by the time
+            // this (async, possibly network-bound) lookup resolves.
+            if (!s.id().equals(w.currentSongId) || previewUrl.isEmpty()) return;
+
             try {
-                Media media = new Media(s.previewUrl());
-                newPlayer = new MediaPlayer(media);
+                Media media = new Media(previewUrl.get());
+                MediaPlayer newPlayer = new MediaPlayer(media);
                 newPlayer.setVolume(0.7);
                 // Auto-stop after the clip so the button resets.
-                final MediaPlayer captured = newPlayer;
-                captured.setOnEndOfMedia(() -> {
-                    captured.stop();
+                newPlayer.setOnEndOfMedia(() -> {
+                    newPlayer.stop();
                     w.playBtn.setText("▶ Play preview");
                 });
                 w.playBtn.setVisible(true);
                 w.playBtn.setManaged(true);
                 w.playBtn.setText("▶ Play preview");
                 w.playBtn.setOnAction(e -> togglePlayback(w, isLeft));
+
+                if (isLeft) {
+                    if (leftPlayer != null) leftPlayer.dispose();
+                    leftPlayer = newPlayer;
+                } else {
+                    if (rightPlayer != null) rightPlayer.dispose();
+                    rightPlayer = newPlayer;
+                }
             } catch (Exception ex) {
-                newPlayer = null;
                 hidePlayButton(w);
             }
-        } else {
-            hidePlayButton(w);
-        }
-
-        // Swap in the new player, disposing the old one.
-        if (isLeft) {
-            if (leftPlayer != null) leftPlayer.dispose();
-            leftPlayer = newPlayer;
-        } else {
-            if (rightPlayer != null) rightPlayer.dispose();
-            rightPlayer = newPlayer;
-        }
+        });
     }
 
     private void hidePlayButton(CardWidgets w) {
