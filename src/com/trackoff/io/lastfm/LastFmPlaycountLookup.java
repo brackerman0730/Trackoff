@@ -34,7 +34,20 @@ public final class LastFmPlaycountLookup {
 
     private LastFmPlaycountLookup() {}
 
-    /** Resolve (from cache or via Last.fm) and deliver the result on the FX thread. */
+    /** Sentinel delivered to {@code onResolved} when resolution genuinely failed (see class doc). */
+    public static final long FAILED = -1L;
+
+    /**
+     * Resolve (from cache or via Last.fm) and deliver the result on the
+     * FX thread. {@link LastFmClient}'s own rate limiting + retries
+     * handle the common case (Last.fm throttling a large playlist's
+     * worth of requests) transparently. If a lookup still fails after
+     * those retries are exhausted, {@link #FAILED} is delivered instead
+     * of a play count — NOT cached and NOT written to the DB. Silently
+     * defaulting a failure to 0 previously meant a rate-limited request
+     * partway through a large playlist got permanently (and wrongly)
+     * recorded as "0 plays" for every song after that point.
+     */
     public static void resolveAsync(Song song, LongConsumer onResolved) {
         String key = cacheKey(song);
         Long cached = CACHE.get(key);
@@ -44,14 +57,15 @@ public final class LastFmPlaycountLookup {
         }
 
         EXECUTOR.submit(() -> {
-            long playcount = 0L;
+            long playcount;
             try {
                 Optional<String[]> override = readOverride(song.id());
                 playcount = override.isPresent()
                         ? LastFmClient.fetchLinkedTrackPlaycount(override.get()[0], override.get()[1]).orElse(0L)
                         : resolvePlaycount(song);
-            } catch (Exception ignored) {
-                // Best-effort: any lookup failure just means "unknown" — shown as no bar.
+            } catch (Exception e) {
+                Platform.runLater(() -> onResolved.accept(FAILED));
+                return;
             }
             CACHE.put(key, playcount);
             writeThrough(song.id(), playcount);

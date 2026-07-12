@@ -310,6 +310,15 @@ public final class LastFmManagerView {
     // ==================================================================
 
     private void onPlaycountResolved(RowState row, long playcount) {
+        if (playcount == LastFmPlaycountLookup.FAILED) {
+            // Genuine failure even after LastFmClient's built-in rate-limit
+            // retries — show this honestly rather than as a confirmed 0,
+            // and don't let it factor into the max-play bar scaling or
+            // count as "0 plays" if sorted by most played.
+            row.countLabel.setText("—");
+            return;
+        }
+
         row.playcount = playcount;
         row.resolved = true;
         row.countLabel.setText(String.format("%,d plays", playcount));

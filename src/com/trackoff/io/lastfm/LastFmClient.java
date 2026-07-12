@@ -30,6 +30,47 @@ public final class LastFmClient {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
+    // ==================================================================
+    //  Global rate limiting + retry — resolving a large playlist (Last.fm
+    //  Manager) fires hundreds/thousands of search+getinfo calls from a
+    //  small thread pool. Verified against a real ~1400-song library:
+    //  unthrottled, Last.fm starts returning "Rate Limit Exceeded" (its
+    //  own wording) after a few hundred calls in under a minute — and
+    //  every song after that point was silently defaulting to a cached,
+    //  persisted "0 plays". RATE_INTERVAL_MS below keeps every outbound
+    //  call (across all threads) safely under that threshold; the retry
+    //  loop is a second line of defense so a transient hit still
+    //  resolves correctly instead of giving up.
+    // ==================================================================
+
+    private static final long RATE_INTERVAL_MS = 300;   // ~3.3 req/sec, global
+    private static final Object RATE_LOCK = new Object();
+    private static long nextAllowedRequestAt = 0;
+
+    private static final int  MAX_RETRIES        = 6;
+    private static final long RETRY_BASE_DELAY_MS = 2000;
+    private static final long RETRY_MAX_DELAY_MS  = 32000;
+
+    private static void awaitRateLimit() {
+        long waitMs;
+        synchronized (RATE_LOCK) {
+            long now = System.currentTimeMillis();
+            long start = Math.max(now, nextAllowedRequestAt);
+            waitMs = start - now;
+            nextAllowedRequestAt = start + RATE_INTERVAL_MS;
+        }
+        if (waitMs > 0) {
+            try { Thread.sleep(waitMs); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
+    }
+
+    /** Exponential backoff with jitter, so concurrent threads retrying together don't re-collide. */
+    private static void sleepBackoff(int attempt) {
+        long base = Math.min(RETRY_BASE_DELAY_MS * (1L << Math.min(attempt, 4)), RETRY_MAX_DELAY_MS);
+        long jitter = (long) (base * 0.2 * Math.random());
+        try { Thread.sleep(base + jitter); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
+
     /** What we learn from {@code user.getInfo}. */
     public record UserInfo(
             String username,
@@ -105,26 +146,30 @@ public final class LastFmClient {
                 + "&api_key="  + enc(apiKey)
                 + "&format=json";
 
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                .header("Accept", "application/json")
-                .GET().build();
+        for (int attempt = 0; ; attempt++) {
+            awaitRateLimit();
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .header("Accept", "application/json")
+                    .GET().build();
+            HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+            String body = resp.body();
 
-        HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
-        String body = resp.body();
+            Integer errorCode = jsonIntOrNull(body, "error");
+            if (errorCode != null) {
+                if (errorCode == 6) return Optional.empty();   // "Track not found" — a real answer, not a failure
+                if (attempt < MAX_RETRIES) { sleepBackoff(attempt); continue; }
+                String msg = jsonStringOrNull(body, "message");
+                throw new RuntimeException("Last.fm rejected the request after " + MAX_RETRIES + " retries: "
+                        + (msg != null ? msg : "error " + errorCode));
+            }
+            if (resp.statusCode() / 100 != 2) {
+                if (attempt < MAX_RETRIES) { sleepBackoff(attempt); continue; }
+                throw new RuntimeException("Last.fm HTTP " + resp.statusCode() + " after " + MAX_RETRIES + " retries");
+            }
 
-        Integer errorCode = jsonIntOrNull(body, "error");
-        if (errorCode != null) {
-            if (errorCode == 6) return Optional.empty();   // "Track not found"
-            String msg = jsonStringOrNull(body, "message");
-            throw new RuntimeException("Last.fm rejected the request: "
-                    + (msg != null ? msg : "error " + errorCode));
+            String playcount = jsonStringOrNull(body, "userplaycount");
+            return Optional.of(playcount == null ? 0L : Long.parseLong(playcount));
         }
-        if (resp.statusCode() / 100 != 2) {
-            throw new RuntimeException("Last.fm HTTP " + resp.statusCode());
-        }
-
-        String playcount = jsonStringOrNull(body, "userplaycount");
-        return Optional.of(playcount == null ? 0L : Long.parseLong(playcount));
     }
 
     /**
@@ -159,28 +204,45 @@ public final class LastFmClient {
                 + "&format=json"
                 + "&limit=1";
 
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                .header("Accept", "application/json")
-                .GET().build();
+        for (int attempt = 0; ; attempt++) {
+            awaitRateLimit();
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .header("Accept", "application/json")
+                    .GET().build();
+            HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+            String body = resp.body();
 
-        HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
-        String body = resp.body();
-        if (resp.statusCode() / 100 != 2) return Optional.empty();
+            if (resp.statusCode() / 100 != 2) {
+                // track.search has no per-track "not found" error code (an
+                // empty result set is just an empty array) — any non-2xx
+                // here is a real request failure (rate limit, 5xx, etc.),
+                // worth retrying rather than silently treating as "no match".
+                if (attempt < MAX_RETRIES) { sleepBackoff(attempt); continue; }
+                throw new RuntimeException("Last.fm search HTTP " + resp.statusCode() + " after " + MAX_RETRIES + " retries");
+            }
+            Integer errorCode = jsonIntOrNull(body, "error");
+            if (errorCode != null) {
+                if (attempt < MAX_RETRIES) { sleepBackoff(attempt); continue; }
+                String msg = jsonStringOrNull(body, "message");
+                throw new RuntimeException("Last.fm search rejected after " + MAX_RETRIES + " retries: "
+                        + (msg != null ? msg : "error " + errorCode));
+            }
 
-        int arrKey = body.indexOf("\"track\"");
-        if (arrKey < 0) return Optional.empty();
-        int bracket = body.indexOf('[', arrKey);
-        if (bracket < 0) return Optional.empty();
-        int braceStart = body.indexOf('{', bracket);
-        if (braceStart < 0) return Optional.empty();
-        int braceEnd = matchBrace(body, braceStart);
-        if (braceEnd < 0) return Optional.empty();
+            int arrKey = body.indexOf("\"track\"");
+            if (arrKey < 0) return Optional.empty();
+            int bracket = body.indexOf('[', arrKey);
+            if (bracket < 0) return Optional.empty();
+            int braceStart = body.indexOf('{', bracket);
+            if (braceStart < 0) return Optional.empty();
+            int braceEnd = matchBrace(body, braceStart);
+            if (braceEnd < 0) return Optional.empty();
 
-        String obj    = body.substring(braceStart, braceEnd + 1);
-        String name   = jsonStringOrNull(obj, "name");
-        String artist = jsonStringOrNull(obj, "artist");
-        if (name == null || artist == null) return Optional.empty();
-        return Optional.of(new TrackMatch(name, artist));
+            String obj    = body.substring(braceStart, braceEnd + 1);
+            String name   = jsonStringOrNull(obj, "name");
+            String artist = jsonStringOrNull(obj, "artist");
+            if (name == null || artist == null) return Optional.empty();
+            return Optional.of(new TrackMatch(name, artist));
+        }
     }
 
     /**
