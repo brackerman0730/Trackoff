@@ -2,6 +2,7 @@ package com.trackoff.ui;
 
 import com.trackoff.config.Settings;
 import com.trackoff.db.Dao;
+import com.trackoff.db.PlaylistPersistence;
 import com.trackoff.io.ProgressStore;
 import com.trackoff.io.SpotifyPlaylistSource;
 import com.trackoff.io.lastfm.LastFmClient;
@@ -377,7 +378,7 @@ public final class LibraryView {
     // ==================================================================
 
     /** Where a picked playlist can go once we've fetched its tracks. */
-    private enum LaunchMode { RANK, TIER, SWIPE }
+    private enum LaunchMode { RANK, TIER, SWIPE, LASTFM_MANAGER }
 
     private void onPlaylistClicked(PlaylistRow r) {
         Alert choose = new Alert(Alert.AlertType.CONFIRMATION);
@@ -385,11 +386,18 @@ public final class LibraryView {
         choose.setHeaderText(r.name());
         choose.setContentText("What do you want to do with this playlist?");
 
-        ButtonType rankBtn   = new ButtonType("Rank");
-        ButtonType tierBtn   = new ButtonType("Tier List");
-        ButtonType swipeBtn  = new ButtonType("Swipe");
-        ButtonType cancelBtn = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
-        choose.getButtonTypes().setAll(rankBtn, tierBtn, swipeBtn, cancelBtn);
+        ButtonType rankBtn    = new ButtonType("Rank");
+        ButtonType tierBtn    = new ButtonType("Tier List");
+        ButtonType swipeBtn   = new ButtonType("Swipe");
+        // Hidden entirely if Last.fm isn't linked — no point offering a
+        // destination that can't show any play counts.
+        ButtonType lastfmBtn  = LastFmClient.isLinked() ? new ButtonType("Last.fm Manager") : null;
+        ButtonType cancelBtn  = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+
+        List<ButtonType> buttons = new ArrayList<>(List.of(rankBtn, tierBtn, swipeBtn));
+        if (lastfmBtn != null) buttons.add(lastfmBtn);
+        buttons.add(cancelBtn);
+        choose.getButtonTypes().setAll(buttons);
         Theme.apply(choose.getDialogPane().getScene());
 
         var pick = choose.showAndWait().orElse(cancelBtn);
@@ -397,7 +405,8 @@ public final class LibraryView {
 
         LaunchMode mode = pick == rankBtn ? LaunchMode.RANK
                         : pick == tierBtn ? LaunchMode.TIER
-                                          : LaunchMode.SWIPE;
+                        : pick == swipeBtn ? LaunchMode.SWIPE
+                                           : LaunchMode.LASTFM_MANAGER;
         fetchAndLaunch(r, mode);
     }
 
@@ -413,7 +422,13 @@ public final class LibraryView {
 
         Task<Playlist> task = new Task<>() {
             @Override protected Playlist call() throws Exception {
-                return new SpotifyPlaylistSource().load(r.id());
+                Playlist playlist = new SpotifyPlaylistSource().load(r.id());
+                // Persist here (still off the FX thread) rather than in
+                // launch(), since this can be dozens of DB writes.
+                if (mode == LaunchMode.LASTFM_MANAGER) {
+                    PlaylistPersistence.persist(r.id(), playlist);
+                }
+                return playlist;
             }
         };
 
@@ -455,6 +470,10 @@ public final class LibraryView {
             case SWIPE -> {
                 if (playlist.size() < 1) { info("Empty playlist."); return; }
                 new SwipeView(stage, playlist, playlist.songs()).show();
+            }
+            case LASTFM_MANAGER -> {
+                if (playlist.size() < 1) { info("Empty playlist."); return; }
+                new LastFmManagerView(stage, currentPlaylistIdForRank, playlist).show();
             }
         }
     }

@@ -83,6 +83,37 @@
     -fx-padding: 0;
 }
 
+/* --- Last.fm Manager play-count bars --- */
+.playcount-bar-track {
+    -fx-background-color: #404040;
+    -fx-background-radius: 4;
+}
+.playcount-bar-fill {
+    -fx-background-color: #1db954;
+    -fx-background-radius: 4;
+}
+.lastfm-manager-row {
+    -fx-background-color: #181818;
+    -fx-background-radius: 6;
+}
+.lastfm-manager-row:hover { -fx-background-color: #282828; }
+
+.playcount-play-overlay {
+    -fx-background-color: rgba(0, 0, 0, 0.55);
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 14px;
+    -fx-font-weight: normal;
+    -fx-padding: 0;
+    -fx-min-width: 26px;
+    -fx-min-height: 26px;
+    -fx-max-width: 26px;
+    -fx-max-height: 26px;
+    -fx-background-radius: 100;
+    -fx-border-radius: 100;
+    -fx-cursor: hand;
+}
+.playcount-play-overlay:hover { -fx-background-color: rgba(29, 185, 84, 0.85); -fx-scale-x: 1; -fx-scale-y: 1; }
+
 /* --- Table (results view) --- */
 .table-view { -fx-background-color: #121212; -fx-border-color: transparent; -fx-padding: 0; }
 .table-view .column-header-background { -fx-background-color: #181818; -fx-background-radius: 6 6 0 0; }
