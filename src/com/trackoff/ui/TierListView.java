@@ -1,5 +1,6 @@
 package com.trackoff.ui;
 
+import com.trackoff.io.PreviewLookup;
 import com.trackoff.model.Playlist;
 import com.trackoff.model.Song;
 
@@ -11,10 +12,13 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.DataFormat;
 import javafx.scene.input.DragEvent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.*;
+import javafx.scene.media.Media;
+import javafx.scene.media.MediaPlayer;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javax.imageio.ImageIO;
@@ -33,9 +37,9 @@ import java.util.*;
  *
  * Each song is rendered as a small tile: the album cover fills the tile,
  * with a dark gradient across the bottom and the track title layered on
- * top â€” YouTube-caption style â€” so it's legible even on bright covers.
+ * top — YouTube-caption style — so it's legible even on bright covers.
  * If a song has no image (CSV-only playlists), we fall back to a plain
- * dark placeholder with the â™ª glyph.
+ * dark placeholder with the ♪ glyph.
  *
  * Layout:
  *   [ Unranked pool                              ]
@@ -48,8 +52,17 @@ import java.util.*;
  */
 public final class TierListView {
 
-    /** Tile size in pixels â€” cover is square. */
+    /** Tile size in pixels — cover is square. */
     private static final double TILE_SIZE = 96;
+
+    /**
+     * Distinct drag format for reordering whole tier rows, so a
+     * tier-row drag can never be mistaken for a song-tile drag (which
+     * uses a plain string containing the song id) — the two live in
+     * completely separate parts of the same row and need to be told
+     * apart at both drag-start and drop time.
+     */
+    private static final DataFormat TIER_DRAG_FORMAT = new DataFormat("application/x-trackoff-tier-row");
 
     // ------------------------------------------------------------------
     //  Default tiers: (name, background color)
@@ -73,8 +86,24 @@ public final class TierListView {
     /** Fast lookup during drag-and-drop. */
     private final Map<String, Song> songById = new HashMap<>();
 
+    /** Stable identity for tier rows during a drag (names can be renamed/duplicated). */
+    private int nextTierUid = 0;
+    private final Map<Integer, TierRow> tierRowsByUid = new HashMap<>();
+
     /** Cache Images so we don't re-download when moving tiles between rows. */
     private final Map<String, Image> imageCache = new HashMap<>();
+
+    /**
+     * Live play buttons keyed by song id, refreshed on every buildTile()
+     * call. Tiles are ephemeral — rebuilt on every drag-drop/auto-tier —
+     * so playback state lives here at the view level instead, and this
+     * map lets togglePlayback() find whichever button is currently on
+     * screen for a given song (even one that wasn't just clicked, e.g.
+     * to reset the previously-playing tile's icon back to ▶).
+     */
+    private final Map<String, Button> playButtons = new HashMap<>();
+    private MediaPlayer currentPlayer;
+    private String      currentPlayingSongId;
 
     private VBox tierColumn;
 
@@ -89,22 +118,24 @@ public final class TierListView {
     //  Scene assembly
     // ==================================================================
     public void show() {
-        Label title = new Label("Tier List â€” " + playlist.name());
+        Label title = new Label("Tier List — " + playlist.name());
         title.getStyleClass().add("label-header");
 
         Region headerSpacer = new Region();
         HBox.setHgrow(headerSpacer, Priority.ALWAYS);
 
+        Button addTierBtn  = ghostButton("+ Add Tier");
         Button autoTierBtn = ghostButton("Auto-tier by rank");
         Button exportCsv   = primaryButton("Export as CSV");
         Button exportPng   = secondaryButton("Export as image");
         Button back        = ghostButton("Back");
+        addTierBtn.setOnAction(e -> promptAddTier());
         autoTierBtn.setOnAction(e -> autoTierByRank());
         exportCsv .setOnAction(e -> exportCsv());
         exportPng .setOnAction(e -> exportPng());
-        back      .setOnAction(e -> new MainView(stage).show());
+        back      .setOnAction(e -> { disposeCurrentPlayer(); new MainView(stage).show(); });
 
-        HBox headerRow = new HBox(10, title, headerSpacer, autoTierBtn, exportCsv, exportPng, back);
+        HBox headerRow = new HBox(10, title, headerSpacer, addTierBtn, autoTierBtn, exportCsv, exportPng, back);
         headerRow.setAlignment(Pos.CENTER_LEFT);
         rows.clear();
         rows.add(new TierRow("Unranked", "#3a3a3a", true));
@@ -126,10 +157,9 @@ public final class TierListView {
         root.setPadding(new Insets(24));
         VBox.setVgrow(scroll, Priority.ALWAYS);
 
-        Scene scene = new Scene(root, 1180, 760);
-        Theme.apply(scene);
-        stage.setScene(scene);
-        stage.setTitle("trackoff â€” Tier List");
+        Theme.show(stage, root, 1180, 760);
+        stage.setTitle("trackoff — Tier List");
+        stage.setOnCloseRequest(e -> disposeCurrentPlayer());
     }
 
     // ==================================================================
@@ -137,6 +167,7 @@ public final class TierListView {
     // ==================================================================
     private final class TierRow {
 
+        final int uid;
         String  name;
         String  color;
         final boolean isPool;
@@ -146,21 +177,36 @@ public final class TierListView {
         final List<Song> tierSongs = new ArrayList<>();
 
         TierRow(String name, String color, boolean isPool) {
+            this.uid   = nextTierUid++;
             this.name  = name;
             this.color = color;
             this.isPool = isPool;
+            tierRowsByUid.put(uid, this);
 
             content = new FlowPane();
             content.getStyleClass().add("tier-content");
             // Wrap based on the pane's actual width so the preferred *height*
-            // is computed correctly (not "as if 1px wide" â€” which made rows huge).
+            // is computed correctly (not "as if 1px wide" — which made rows huge).
             content.prefWrapLengthProperty().bind(content.widthProperty());
             HBox.setHgrow(content, Priority.ALWAYS);
 
-            content.setOnDragOver   (e -> onDragOver(e));
-            content.setOnDragEntered(e -> content.getStyleClass().add("tier-content-target"));
-            content.setOnDragExited (e -> content.getStyleClass().remove("tier-content-target"));
-            content.setOnDragDropped(e -> onDragDropped(e, this));
+            // Song-tile drops only — anything else (e.g. a tier-row reorder
+            // drag) is deliberately left un-accepted/un-consumed here so it
+            // bubbles up to the row-level (node) handlers below.
+            content.setOnDragOver(e -> {
+                if (e.getDragboard().hasString()) onDragOver(e);
+            });
+            content.setOnDragEntered(e -> {
+                if (e.getDragboard().hasString()) content.getStyleClass().add("tier-content-target");
+            });
+            content.setOnDragExited(e -> content.getStyleClass().remove("tier-content-target"));
+            content.setOnDragDropped(e -> {
+                if (e.getDragboard().hasString()) onDragDropped(e, this);
+            });
+
+            // Tier-row reorder: dropping anywhere on this row's full width
+            // (label or content) moves the dragged tier before/after it.
+            HBox rowNode;
 
             if (isPool) {
                 labelNode = new Label(name);
@@ -168,16 +214,65 @@ public final class TierListView {
                 labelNode.setMinWidth(70);
                 labelNode.setAlignment(Pos.CENTER);
                 content.getStyleClass().add("unranked-pool");
-                node = new HBox(10, labelNode, content);
+                rowNode = new HBox(10, labelNode, content);
             } else {
                 labelNode = new Label(name);
                 labelNode.getStyleClass().add("tier-label");
                 labelNode.setStyle("-fx-background-color:" + color + ";");
                 labelNode.setOnMouseClicked(e -> promptRename());
-                node = new HBox(10, labelNode, content);
-                node.getStyleClass().add("tier-row");
+
+                Button deleteBtn = new Button("✕");
+                deleteBtn.getStyleClass().add("tier-delete-btn");
+                deleteBtn.setTooltip(new Tooltip("Delete this tier"));
+                deleteBtn.setOnAction(e -> promptDeleteTier(this));
+
+                VBox labelCol = new VBox(4, labelNode, deleteBtn);
+                labelCol.setAlignment(Pos.CENTER);
+                rowNode = new HBox(10, labelCol, content);
+                rowNode.getStyleClass().add("tier-row");
+
+                // Drag SOURCE — grabbing the label column reorders the whole
+                // tier (dragging a song tile, inside `content`, is unaffected
+                // since it's a sibling region with its own drag handling).
+                labelCol.setOnDragDetected(e -> {
+                    Dragboard db = labelCol.startDragAndDrop(TransferMode.MOVE);
+                    ClipboardContent cc = new ClipboardContent();
+                    cc.put(TIER_DRAG_FORMAT, String.valueOf(uid));
+                    db.setContent(cc);
+                    rowNode.getStyleClass().add("tier-row-dragging");
+                    e.consume();
+                });
+                labelCol.setOnDragDone(e -> rowNode.getStyleClass().remove("tier-row-dragging"));
             }
+            this.node = rowNode;
             node.setAlignment(Pos.CENTER_LEFT);
+
+            // Drag TARGET — every row (including the pool, so a tier can be
+            // dragged to become the very first one) accepts a tier-row drag.
+            node.setOnDragOver(e -> {
+                if (e.getDragboard().hasContent(TIER_DRAG_FORMAT)) {
+                    e.acceptTransferModes(TransferMode.MOVE);
+                }
+                e.consume();
+            });
+            node.setOnDragEntered(e -> {
+                if (e.getDragboard().hasContent(TIER_DRAG_FORMAT)) node.getStyleClass().add("tier-row-drop-target");
+            });
+            node.setOnDragExited(e -> node.getStyleClass().remove("tier-row-drop-target"));
+            node.setOnDragDropped(e -> {
+                Dragboard db = e.getDragboard();
+                boolean success = false;
+                if (db.hasContent(TIER_DRAG_FORMAT)) {
+                    int draggedUid = Integer.parseInt((String) db.getContent(TIER_DRAG_FORMAT));
+                    TierRow dragged = tierRowsByUid.get(draggedUid);
+                    if (dragged != null && dragged != this) {
+                        reorderTier(dragged, this, e.getY());
+                        success = true;
+                    }
+                }
+                e.setDropCompleted(success);
+                e.consume();
+            });
         }
 
         void addSong(Song s) {
@@ -215,7 +310,7 @@ public final class TierListView {
     }
 
     // ==================================================================
-    //  Tile construction â€” cover + gradient + title
+    //  Tile construction — cover + gradient + title
     // ==================================================================
     private StackPane buildTile(Song s) {
         StackPane tile = new StackPane();
@@ -243,7 +338,7 @@ public final class TierListView {
             StackPane placeholder = new StackPane();
             placeholder.getStyleClass().add("song-tile-placeholder");
             placeholder.setPrefSize(TILE_SIZE, TILE_SIZE);
-            Label glyph = new Label("â™ª");
+            Label glyph = new Label("♪");
             glyph.getStyleClass().add("song-tile-placeholder-label");
             placeholder.getChildren().add(glyph);
             tile.getChildren().add(placeholder);
@@ -266,6 +361,15 @@ public final class TierListView {
         StackPane.setAlignment(title, Pos.BOTTOM_CENTER);
         StackPane.setMargin(title, new Insets(0, 4, 4, 4));
         tile.getChildren().add(title);
+
+        // ---- Layer 4: preview play button, top-right corner ----
+        Button playBtn = new Button(s.id().equals(currentPlayingSongId) ? "⏸" : "▶");
+        playBtn.getStyleClass().add("tile-play-overlay");
+        playBtn.setOnAction(e -> togglePlayback(s));
+        StackPane.setAlignment(playBtn, Pos.TOP_RIGHT);
+        StackPane.setMargin(playBtn, new Insets(4, 4, 0, 0));
+        tile.getChildren().add(playBtn);
+        playButtons.put(s.id(), playBtn);
 
         // ---- Tooltip so the full title + artist is available on hover ----
         Tooltip tip = new Tooltip(s.title() + "\n" + s.artist()
@@ -301,6 +405,67 @@ public final class TierListView {
     }
 
     // ==================================================================
+    //  Preview playback — lazy: resolved on first click of a tile's play
+    //  button, same Deezer-backed lookup as ComparisonView/SwipeView/
+    //  LastFmManagerView. Only one preview plays at a time; state lives
+    //  here at the view level (not on the tile) since tiles get rebuilt
+    //  on every drag-drop or auto-tier.
+    // ==================================================================
+
+    private void togglePlayback(Song s) {
+        if (s.id().equals(currentPlayingSongId) && currentPlayer != null) {
+            if (currentPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
+                currentPlayer.pause();
+                setPlayButtonText(s.id(), "▶");
+            } else {
+                currentPlayer.play();
+                setPlayButtonText(s.id(), "⏸");
+            }
+            return;
+        }
+
+        disposeCurrentPlayer();
+
+        Button btn = playButtons.get(s.id());
+        if (btn != null) btn.setDisable(true);
+        PreviewLookup.resolveAsync(s, previewUrl -> {
+            if (btn != null) btn.setDisable(false);
+            if (previewUrl.isEmpty()) return;   // no preview found; button stays inert
+
+            try {
+                Media media = new Media(previewUrl.get());
+                MediaPlayer player = new MediaPlayer(media);
+                player.setVolume(0.7);
+                player.setOnEndOfMedia(() -> {
+                    player.stop();
+                    setPlayButtonText(s.id(), "▶");
+                    if (s.id().equals(currentPlayingSongId)) currentPlayingSongId = null;
+                });
+                currentPlayer = player;
+                currentPlayingSongId = s.id();
+                player.play();
+                setPlayButtonText(s.id(), "⏸");
+            } catch (Exception ignored) {
+                // Best-effort, same as elsewhere: a bad media URL just means no playback.
+            }
+        });
+    }
+
+    private void setPlayButtonText(String songId, String text) {
+        Button b = playButtons.get(songId);
+        if (b != null) b.setText(text);
+    }
+
+    private void disposeCurrentPlayer() {
+        if (currentPlayer != null) {
+            currentPlayer.dispose();
+            if (currentPlayingSongId != null) setPlayButtonText(currentPlayingSongId, "▶");
+        }
+        currentPlayer = null;
+        currentPlayingSongId = null;
+    }
+
+    // ==================================================================
     //  Drag & drop
     // ==================================================================
     private void onDragOver(DragEvent e) {
@@ -320,7 +485,7 @@ public final class TierListView {
 
             // If the song is being reordered inside the same row and its old
             // position was before the drop point, removing it shifts everything
-            // after it left by one â€” compensate so the tile lands where the user
+            // after it left by one — compensate so the tile lands where the user
             // actually pointed instead of one slot to the right.
             if (target.tierSongs.contains(s)) {
                 int oldIndex = target.tierSongs.indexOf(s);
@@ -379,20 +544,83 @@ public final class TierListView {
         int total = all.size();
         if (total == 0) return;
 
+        // Excludes the pool (row 0) — tier count is user-controlled now
+        // (Add/Delete Tier), so this can't assume a fixed 6-tier layout.
+        List<TierRow> tierRows = rows.subList(1, rows.size());
+        int numTiers = tierRows.size();
+        if (numTiers == 0) return;
+
         for (TierRow r : rows) {
             r.tierSongs.clear();
             r.content.getChildren().clear();
         }
 
-        double[] pct = {0.10, 0.20, 0.25, 0.25, 0.15, 0.05};
         int idx = 0;
-        for (int t = 0; t < 6 && idx < total; t++) {
-            int count = (int) Math.round(pct[t] * total);
-            if (t == 5) count = total - idx;
+        int base = total / numTiers;
+        int remainder = total % numTiers;
+        for (int t = 0; t < numTiers && idx < total; t++) {
+            int count = base + (t < remainder ? 1 : 0);
             for (int k = 0; k < count && idx < total; k++, idx++) {
-                rows.get(t + 1).addSong(all.get(idx));
+                tierRows.get(t).addSong(all.get(idx));
             }
         }
+    }
+
+    // ==================================================================
+    //  Tier create / delete
+    // ==================================================================
+    private void promptAddTier() {
+        TextInputDialog d = new TextInputDialog("New Tier");
+        d.setTitle("Add tier");
+        d.setHeaderText("Name for the new tier:");
+        d.setContentText("Name:");
+        Theme.apply(d.getDialogPane().getScene());
+        d.showAndWait().ifPresent(name -> {
+            String trimmed = name.trim();
+            if (trimmed.isEmpty()) return;
+            String color = DEFAULT_TIERS[(rows.size() - 1) % DEFAULT_TIERS.length][1];
+            TierRow row = new TierRow(trimmed, color, false);
+            rows.add(row);
+            tierColumn.getChildren().add(row.node);
+        });
+    }
+
+    private void promptDeleteTier(TierRow row) {
+        if (row.isPool) return;   // safety net — no delete button is ever placed on the pool
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Delete tier");
+        confirm.setHeaderText("Delete tier \"" + row.name + "\"?");
+        confirm.setContentText(row.tierSongs.size() + " song(s) in this tier will move back to Unranked.");
+        Theme.apply(confirm.getDialogPane().getScene());
+        confirm.showAndWait()
+                .filter(bt -> bt == ButtonType.OK)
+                .ifPresent(bt -> deleteTier(row));
+    }
+
+    private void deleteTier(TierRow row) {
+        for (Song s : new ArrayList<>(row.tierSongs)) {
+            row.removeSong(s);
+            rows.get(0).addSong(s);
+        }
+        rows.remove(row);
+        tierColumn.getChildren().remove(row.node);
+    }
+
+    /**
+     * Move {@code dragged} to just before or after {@code target}, based on
+     * which half of the target row {@code dropY} landed in. The pool (row 0)
+     * can never move and can never be displaced from index 0 — dropping a
+     * tier on the pool row inserts it as the new first tier instead.
+     */
+    private void reorderTier(TierRow dragged, TierRow target, double dropY) {
+        rows.remove(dragged);
+        int targetIdx = rows.indexOf(target);
+        boolean insertAfter = dropY > target.node.getHeight() / 2.0;
+        int insertIdx = insertAfter ? targetIdx + 1 : targetIdx;
+        insertIdx = Math.max(insertIdx, 1);   // never before the pool
+        rows.add(insertIdx, dragged);
+        tierColumn.getChildren().setAll(rows.stream().map(r -> r.node).toList());
     }
 
     private void exportCsv() {

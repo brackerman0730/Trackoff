@@ -25,6 +25,7 @@ $sources = Get-ChildItem -Path $srcRoot -Filter *.java -Recurse | ForEach-Object
 Write-Host "Compiling $($sources.Count) Java files..." -ForegroundColor Cyan
 
 & javac `
+    -encoding UTF-8 `
     --module-path "$javafxLib" `
     --add-modules javafx.controls,javafx.media,java.desktop,javafx.fxml,javafx.swing `
     -cp "$sqliteJar" `

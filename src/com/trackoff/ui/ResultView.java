@@ -80,9 +80,7 @@ public final class ResultView {
         root.setPadding(new Insets(30));
         VBox.setVgrow(table, Priority.ALWAYS);
 
-        Scene scene = new Scene(root, 900, 640);
-        Theme.apply(scene);
-        stage.setScene(scene);
+        Theme.show(stage, root, 900, 640);
         stage.setTitle("trackoff — Results");
     }
 

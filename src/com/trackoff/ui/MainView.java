@@ -98,9 +98,7 @@ public final class MainView {
         root.setAlignment(Pos.CENTER);
         root.setPadding(new Insets(50));
 
-        Scene scene = new Scene(root, 620, 700);
-        Theme.apply(scene);
-        stage.setScene(scene);
+        Theme.show(stage, root, 620, 700);
         stage.setTitle("Trackoff");
         stage.show();
     }

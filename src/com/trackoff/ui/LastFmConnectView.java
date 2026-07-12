@@ -24,7 +24,7 @@ import java.awt.Desktop;
  * Ask the user for their Last.fm username + API key, verify with a
  * test call, save on success.
  *
- * Way simpler than Spotify â€” no OAuth, no redirect, no browser dance.
+ * Way simpler than Spotify — no OAuth, no redirect, no browser dance.
  * One HTTP request to {@code user.getinfo} tells us if the creds work
  * and gives us the scrobble count for a nice welcome message.
  */
@@ -88,7 +88,7 @@ public final class LastFmConnectView {
             connectBtn.setDisable(true);
             back.setDisable(true);
             spinner.setVisible(true);
-            status.setText("Testing credentialsâ€¦");
+            status.setText("Testing credentials…");
 
             Task<LastFmClient.UserInfo> task = new Task<>() {
                 @Override protected LastFmClient.UserInfo call() throws Exception {
@@ -100,7 +100,7 @@ public final class LastFmConnectView {
                 LastFmClient.UserInfo info = task.getValue();
                 LastFmClient.saveCredentials(info.username(), key, info.playcount());
                 info("Linked as " + info.username()
-                        + "  Â·  " + String.format("%,d", info.playcount()) + " scrobbles");
+                        + "  ·  " + String.format("%,d", info.playcount()) + " scrobbles");
                 new MainView(stage).show();
             });
             task.setOnFailed(ev -> {
@@ -138,10 +138,8 @@ public final class LastFmConnectView {
         root.setPadding(new Insets(30));
         root.setAlignment(Pos.TOP_LEFT);
 
-        Scene scene = new Scene(root, 640, 520);
-        Theme.apply(scene);
-        stage.setScene(scene);
-        stage.setTitle("Trackoff â€” Connect Last.fm");
+        Theme.show(stage, root, 640, 520);
+        stage.setTitle("Trackoff — Connect Last.fm");
     }
 
     private static String currentStatus() {
@@ -150,7 +148,7 @@ public final class LastFmConnectView {
         String cnt  = Settings.getOr(Settings.LASTFM_PLAYCOUNT, "0");
         try {
             long n = Long.parseLong(cnt);
-            return "Connected as " + user + "  Â·  " + String.format("%,d", n) + " scrobbles";
+            return "Connected as " + user + "  ·  " + String.format("%,d", n) + " scrobbles";
         } catch (Exception e) {
             return "Connected as " + user;
         }

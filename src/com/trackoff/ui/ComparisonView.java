@@ -163,11 +163,11 @@ public final class ComparisonView {
         BorderPane.setMargin(sidebar, new Insets(0, 0, 0, 20));
         root.setPadding(new Insets(30));
 
-        Scene scene = new Scene(root, 1080, 720);
-        Theme.apply(scene);
+        Theme.show(stage, root, 1080, 720);
 
-        // Ctrl+Z → undo.
-        scene.setOnKeyPressed(e -> {
+        // Ctrl+Z → undo. Set on the (possibly reused) scene each time, so
+        // it's overwritten rather than stacking handlers from prior views.
+        stage.getScene().setOnKeyPressed(e -> {
             if (e.isControlDown() && e.getCode() == javafx.scene.input.KeyCode.Z) {
                 undoLast();
             }
@@ -176,7 +176,6 @@ public final class ComparisonView {
         // Make sure any playing preview stops if the user closes the window.
         stage.setOnCloseRequest(e -> disposePlayers());
 
-        stage.setScene(scene);
         stage.setTitle("Trackoff — " + playlist.name());
 
         refresh();

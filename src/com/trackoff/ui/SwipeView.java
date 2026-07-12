@@ -137,17 +137,17 @@ public final class SwipeView {
         root.setAlignment(Pos.TOP_CENTER);
         root.setPadding(new Insets(24));
 
-        Scene scene = new Scene(root, 720, 820);
-        Theme.apply(scene);
+        Theme.show(stage, root, 720, 820);
 
-        // Keyboard shortcuts (defer install so focus is on the scene, not a button).
-        scene.setOnKeyPressed(e -> {
+        // Keyboard shortcuts. Set on the (possibly reused) scene each
+        // time, so it's overwritten rather than stacking handlers from
+        // whatever view was showing before.
+        stage.getScene().setOnKeyPressed(e -> {
             if      (e.getCode() == KeyCode.LEFT)  animateSwipe(-1);
             else if (e.getCode() == KeyCode.RIGHT) animateSwipe(+1);
             else if (e.getCode() == KeyCode.Z)     undo();
         });
 
-        stage.setScene(scene);
         stage.setTitle("trackoff — Swipe");
         loadCurrent();
     }
@@ -438,9 +438,7 @@ public final class SwipeView {
         VBox root = new VBox(16, title, lists, actions);
         root.setPadding(new Insets(24));
 
-        Scene scene = new Scene(root, 900, 640);
-        Theme.apply(scene);
-        stage.setScene(scene);
+        Theme.show(stage, root, 900, 640);
     }
 
     private void exportCsv() {

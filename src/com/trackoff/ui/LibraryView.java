@@ -123,9 +123,7 @@ public final class LibraryView {
         VBox root = new VBox(14, header, strip, loading, grid);
         root.setPadding(new Insets(24));
 
-        Scene scene = new Scene(root, 900, 720);
-        Theme.apply(scene);
-        stage.setScene(scene);
+        Theme.show(stage, root, 900, 720);
         stage.setTitle("Trackoff — Library");
 
         loadAsync(false);

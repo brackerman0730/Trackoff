@@ -143,9 +143,7 @@ public final class SpotifyConnectView {
         root.setPadding(new Insets(30));
         root.setAlignment(Pos.TOP_LEFT);
 
-        Scene scene = new Scene(root, 640, 560);
-        Theme.apply(scene);
-        stage.setScene(scene);
+        Theme.show(stage, root, 640, 560);
         stage.setTitle("Trackoff — Connect Spotify");
     }
 

@@ -136,9 +136,7 @@ public final class LastFmManagerView {
         VBox root = new VBox(14, header, sub, scroll);
         root.setPadding(new Insets(24));
 
-        Scene scene = new Scene(root, 900, 720);
-        Theme.apply(scene);
-        stage.setScene(scene);
+        Theme.show(stage, root, 900, 720);
         stage.setTitle("Trackoff — Last.fm Manager — " + playlist.name());
         stage.setOnCloseRequest(e -> disposeAllPlayers());
 
@@ -170,7 +168,7 @@ public final class LastFmManagerView {
         art.setClip(artClip);
 
         Button playBtn = new Button("▶");
-        playBtn.getStyleClass().add("playcount-play-overlay");
+        playBtn.getStyleClass().add("tile-play-overlay");
 
         StackPane artHolder = new StackPane(art, playBtn);
         artHolder.setMinSize(ART_SIZE, ART_SIZE);
