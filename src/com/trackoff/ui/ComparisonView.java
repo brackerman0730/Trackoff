@@ -39,6 +39,10 @@ import java.util.Optional;
  */
 public final class ComparisonView {
 
+    /** Fixed width for the preview play/pause button, wide enough for the
+     *  longer "▶ Play preview" label so the toggle never reflows the card. */
+    private static final double PLAY_BTN_WIDTH = 170;
+
     private final Stage    stage;
     private final Playlist playlist;
     private final AdaptiveMergeSortRanker ranker;
@@ -96,10 +100,30 @@ public final class ComparisonView {
         leftCard .setOnMouseClicked(e -> answer(ComparisonChoice.LEFT));
         rightCard.setOnMouseClicked(e -> answer(ComparisonChoice.RIGHT));
 
-        HBox cards = new HBox(20, leftCard, rightCard);
-        cards.setAlignment(Pos.CENTER);
-        HBox.setHgrow(leftCard,  Priority.ALWAYS);
-        HBox.setHgrow(rightCard, Priority.ALWAYS);
+        // Two hard 50% columns rather than an HBox. HBox only splits the
+        // *surplus* width evenly — each child keeps its own preferred width
+        // underneath — so cards whose content differs (a longer title, a
+        // wider play button) stay permanently uneven, and the gap is most
+        // obvious maximised. Percentage columns are content-independent.
+        ColumnConstraints cardCol = new ColumnConstraints();
+        cardCol.setPercentWidth(50);
+        cardCol.setHgrow(Priority.ALWAYS);
+
+        GridPane cards = new GridPane();
+        cards.setHgap(20);
+        cards.getColumnConstraints().addAll(cardCol, cardCol);
+        cards.add(leftCard,  0, 0);
+        cards.add(rightCard, 1, 0);
+
+        // Fill the column rather than stopping at the preferred width. min=0
+        // keeps the split exactly 50/50: a wrapped Label's minimum width is
+        // its longest word, which differs per song, so honouring the cards'
+        // natural minimums would let the columns drift apart again. Nothing
+        // inside the card is rigid enough to overflow at that size.
+        for (VBox c : new VBox[]{leftCard, rightCard}) {
+            c.setMaxWidth(Double.MAX_VALUE);
+            c.setMinWidth(0);
+        }
 
         // ---- Choice buttons (grid keeps them evenly sized) ----
         Button pickLeft  = primaryButton("◀ Pick Left");
@@ -222,6 +246,16 @@ public final class ComparisonView {
         w.playBtn.getStyleClass().add("button-secondary");
         w.playBtn.setVisible(false);   // hidden until we know a preview exists
         w.playBtn.setManaged(false);
+        // Pin the width: "▶ Play preview" and "⏸ Pause" are different lengths,
+        // so without this the button (and the card around it) resizes every
+        // time playback is toggled. Sized for the longer of the two labels.
+        // min stays 0 rather than PLAY_BTN_WIDTH so a narrow window shrinks
+        // the button instead of overflowing the card — and because the width
+        // then comes purely from the space available, it's still independent
+        // of which label is showing.
+        w.playBtn.setMinWidth(0);
+        w.playBtn.setPrefWidth(PLAY_BTN_WIDTH);
+        w.playBtn.setMaxWidth(PLAY_BTN_WIDTH);
 
         VBox textCol = new VBox(6, w.title, w.artist);
         Region spacer = new Region();
