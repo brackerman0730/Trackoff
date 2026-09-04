@@ -330,3 +330,58 @@
     -fx-text-fill: #909090;
     -fx-font-size: 11px;
 }
+/* --- Last.fm play-count graph (PlaycountGraph) --- */
+/* Compact square-ish zoom controls; the base .button pill padding is far
+   too wide for a "+" / "−" pair sitting next to the axis. */
+.graph-zoom-btn {
+    -fx-background-color: #2a2a2a;
+    -fx-text-fill: #b3b3b3;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 10 3 10;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-cursor: hand;
+}
+.graph-zoom-btn:hover {
+    -fx-background-color: #3a3a3a;
+    -fx-text-fill: #ffffff;
+    -fx-scale-x: 1;      /* the base .button hover scale makes these jitter */
+    -fx-scale-y: 1;
+}
+
+/* Active state for the graph's sort/zoom buttons. */
+.graph-zoom-btn-active {
+    -fx-background-color: #1db954;
+    -fx-text-fill: #000000;
+}
+.graph-zoom-btn-active:hover { -fx-background-color: #1ed760; -fx-text-fill: #000000; }
+
+/* --- Last.fm Manager mode switch (List / Graph / Artists) --- */
+/* A segmented control, not three pills: the modes are one choice, and
+   the base .button pill padding would sprawl across the header. */
+.mode-btn {
+    -fx-background-color: transparent;
+    -fx-border-color: #4a4a4a;
+    -fx-border-width: 1;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-text-fill: #b3b3b3;
+    -fx-font-size: 12px;
+    -fx-font-weight: normal;
+    -fx-padding: 5 14 5 14;
+    -fx-cursor: hand;
+}
+.mode-btn:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+    -fx-text-fill: #ffffff;
+    -fx-scale-x: 1;      /* the base .button hover scale makes these jitter */
+    -fx-scale-y: 1;
+}
+.mode-btn-active {
+    -fx-background-color: #1db954;
+    -fx-border-color: #1db954;
+    -fx-text-fill: #000000;
+    -fx-font-weight: bold;
+}
+.mode-btn-active:hover { -fx-background-color: #1ed760; -fx-border-color: #1ed760; -fx-text-fill: #000000; }

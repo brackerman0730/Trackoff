@@ -34,7 +34,9 @@ final class Migrations {
     private static final List<Migration> ALL = List.of(
             new Migration(1, "/com/trackoff/db/schema/V1__initial_schema.sql"),
             new Migration(2, "/com/trackoff/db/schema/V2__lastfm_manager.sql"),
-            new Migration(3, "/com/trackoff/db/schema/V3__lastfm_override.sql")
+            new Migration(3, "/com/trackoff/db/schema/V3__lastfm_override.sql"),
+            new Migration(4, "/com/trackoff/db/schema/V4__lastfm_playcount_account.sql"),
+            new Migration(5, "/com/trackoff/db/schema/V5__lastfm_artist_playcounts.sql")
     );
 
     private Migrations() {}

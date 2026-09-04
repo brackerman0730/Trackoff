@@ -184,6 +184,63 @@ public final class LastFmClient {
         return fetchTrackPlaycount(artist, track, user.get(), key.get());
     }
 
+    /**
+     * How many times {@code username} has scrobbled ANYTHING by this
+     * artist, via {@code artist.getinfo}'s {@code stats.userplaycount}.
+     * Empty means Last.fm's "artist not found" (error code 6).
+     *
+     * Note this is the user's whole-library total for the artist, not a
+     * sum over the tracks in any playlist — the two are deliberately
+     * different numbers in the Artists view: one says "how much do I
+     * listen to this artist at all", the other "how much of that is
+     * represented here".
+     */
+    public static Optional<Long> fetchArtistPlaycount(String artist, String username, String apiKey)
+            throws Exception {
+        String url = BASE
+                + "?method=artist.getinfo"
+                + "&artist="   + enc(artist)
+                + "&username=" + enc(username)
+                + "&api_key="  + enc(apiKey)
+                + "&autocorrect=1"
+                + "&format=json";
+
+        for (int attempt = 0; ; attempt++) {
+            awaitRateLimit();
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .header("Accept", "application/json")
+                    .GET().build();
+            HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+            String body = resp.body();
+
+            Integer errorCode = jsonIntOrNull(body, "error");
+            if (errorCode != null) {
+                if (errorCode == 6) return Optional.empty();   // not found — a real answer
+                if (attempt < MAX_RETRIES) { sleepBackoff(attempt); continue; }
+                String msg = jsonStringOrNull(body, "message");
+                throw new RuntimeException("Last.fm rejected artist.getinfo after " + MAX_RETRIES + " retries: "
+                        + (msg != null ? msg : "error " + errorCode));
+            }
+            if (resp.statusCode() / 100 != 2) {
+                if (attempt < MAX_RETRIES) { sleepBackoff(attempt); continue; }
+                throw new RuntimeException("Last.fm HTTP " + resp.statusCode() + " after " + MAX_RETRIES + " retries");
+            }
+
+            // "userplaycount" is its own key inside stats, so the plain
+            // key search can't collide with the global "playcount".
+            String playcount = jsonStringOrNull(body, "userplaycount");
+            return Optional.of(playcount == null || playcount.isBlank() ? 0L : Long.parseLong(playcount.trim()));
+        }
+    }
+
+    /** Convenience: {@link #fetchArtistPlaycount} for the currently-linked user. */
+    public static Optional<Long> fetchLinkedArtistPlaycount(String artist) throws Exception {
+        Optional<String> user = Settings.get(Settings.LASTFM_USERNAME);
+        Optional<String> key  = Settings.get(Settings.LASTFM_API_KEY);
+        if (user.isEmpty() || key.isEmpty()) throw new IllegalStateException("Last.fm not linked");
+        return fetchArtistPlaycount(artist, user.get(), key.get());
+    }
+
     /** A best-guess (corrected) track match from {@code track.search}. */
     public record TrackMatch(String name, String artist) {}
 

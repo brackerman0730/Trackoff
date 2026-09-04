@@ -22,9 +22,12 @@ import java.util.function.LongConsumer;
  * work). Cache key is artist+title, not song id — play count is scoped
  * to the linked Last.fm account, not the song's identity.
  *
- * On every successful fetch this also writes through to
- * {@code songs.lastfm_playcount}/{@code lastfm_playcount_fetched_at}, so
- * a future daily-recheck feature has a cached value without re-fetching.
+ * Every successful fetch also writes through to {@link PlaycountStore}
+ * (the {@code songs.lastfm_playcount} columns), which is what the
+ * Last.fm Manager actually renders from on open — this class is now the
+ * refresh path, not the read path. Bulk refreshes go through
+ * {@link PlaycountUpdater} instead of calling {@link #resolveAsync} per
+ * song, so their DB writes batch into one transaction.
  */
 public final class LastFmPlaycountLookup {
 
@@ -57,21 +60,47 @@ public final class LastFmPlaycountLookup {
         }
 
         EXECUTOR.submit(() -> {
-            long playcount;
-            try {
-                Optional<String[]> override = readOverride(song.id());
-                playcount = override.isPresent()
-                        ? LastFmClient.fetchLinkedTrackPlaycount(override.get()[0], override.get()[1]).orElse(0L)
-                        : resolvePlaycount(song);
-            } catch (Exception e) {
+            long playcount = resolveBlocking(song);
+            if (playcount == FAILED) {
                 Platform.runLater(() -> onResolved.accept(FAILED));
                 return;
             }
-            CACHE.put(key, playcount);
-            writeThrough(song.id(), playcount);
-            long result = playcount;
-            Platform.runLater(() -> onResolved.accept(result));
+            PlaycountStore.save(song.id(), playcount);
+            Platform.runLater(() -> onResolved.accept(playcount));
         });
+    }
+
+    /**
+     * Fetch this song's play count on the CALLING thread, bypassing the
+     * in-memory cache (so it's a genuine refresh, not a replay), and
+     * without persisting — persistence is the caller's call, because
+     * {@link PlaycountUpdater} batches hundreds of these into one
+     * transaction rather than doing a write per song.
+     *
+     * Returns {@link #FAILED} rather than throwing, and does not cache
+     * a failure. {@link LastFmClient} handles rate limiting and retries
+     * internally, so reaching here means those were exhausted.
+     */
+    public static long resolveBlocking(Song song) {
+        try {
+            Optional<String[]> override = readOverride(song.id());
+            long playcount = override.isPresent()
+                    ? LastFmClient.fetchLinkedTrackPlaycount(override.get()[0], override.get()[1]).orElse(0L)
+                    : resolvePlaycount(song);
+            CACHE.put(cacheKey(song), playcount);
+            return playcount;
+        } catch (Exception e) {
+            return FAILED;
+        }
+    }
+
+    /**
+     * Prime the in-memory cache from the persisted store, so a later
+     * {@link #resolveAsync} for an already-known song answers instantly
+     * instead of hitting the network.
+     */
+    public static void seed(Song song, long playcount) {
+        CACHE.put(cacheKey(song), playcount);
     }
 
     /**
@@ -106,8 +135,14 @@ public final class LastFmPlaycountLookup {
         return LastFmClient.fetchLinkedTrackPlaycount(primaryArtist, song.title()).orElse(0L);
     }
 
-    /** Spotify joins multiple credited artists as "A, B, C" — the first is the primary credit. */
-    private static String primaryArtist(String artist) {
+    /**
+     * Spotify joins multiple credited artists as "A, B, C" — the first
+     * is the primary credit. Public because the Artists view groups on
+     * exactly this, and grouping by a different rule than the one used
+     * to look counts up would put a song under an artist whose play
+     * count was fetched for someone else.
+     */
+    public static String primaryArtist(String artist) {
         int comma = artist.indexOf(',');
         return comma < 0 ? artist : artist.substring(0, comma).trim();
     }
@@ -155,21 +190,15 @@ public final class LastFmPlaycountLookup {
         Dao.exec("UPDATE songs SET lastfm_override_artist = NULL, lastfm_override_title = NULL WHERE id = ?", songId);
     }
 
-    /** Drop this song's cached play count so the next resolveAsync re-fetches (e.g. after set/clearOverride). */
+    /**
+     * Drop this song's cached play count — both in memory and in the
+     * persisted store — so the next resolve re-fetches it. Called after
+     * set/clearOverride, where the previously cached number is now
+     * attributed to the wrong Last.fm track.
+     */
     public static void invalidate(Song song) {
         CACHE.remove(cacheKey(song));
-    }
-
-    private static void writeThrough(String songId, long playcount) {
-        try {
-            Dao.exec("""
-                    UPDATE songs
-                    SET lastfm_playcount = ?, lastfm_playcount_fetched_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """, playcount, songId);
-        } catch (Exception ignored) {
-            // Cache write-through is a convenience for later features, not required now.
-        }
+        PlaycountStore.clear(song.id());
     }
 
     private static String cacheKey(Song song) {
